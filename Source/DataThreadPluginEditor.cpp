@@ -26,6 +26,6 @@
 DataThreadPluginEditor::DataThreadPluginEditor (GenericProcessor* parentNode, DataThreadPlugin* plugin)
     : GenericEditor (parentNode)
 {
-    desiredWidth = 150; // sets the width of the plugin editor
+    desiredWidth = 300; // sets the width of the plugin editor
     this->thread = thread;
 }

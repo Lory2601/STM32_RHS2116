@@ -56,7 +56,7 @@ extern "C" EXPORT int getPluginInfo (int index, Plugin::PluginInfo* info)
         case 0:
 
             info->type = Plugin::DATA_THREAD;
-            info->dataThread.name = "Custom Source"; // <---- update
+            info->dataThread.name = "STM32-RHS2116"; // <---- update
             info->dataThread.creator = &createDataThread<DataThreadPlugin>; // <---- update
             break;
 
