@@ -182,6 +182,11 @@ private:
     // Thread del producer
     void producerLoop();
 
+    // Thread di lettura seriale
+    void serialLoop();
+    std::thread serialThread_;
+    std::atomic<bool> serialRunning_{false};
+
     std::unique_ptr<PacketPoolQueue> queue_;
     std::thread producerThread_;
     std::atomic_bool producerRunning_{false};

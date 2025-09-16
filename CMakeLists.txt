@@ -105,3 +105,14 @@ endforeach()
 #
 #target_link_libraries(${PLUGIN_NAME} ${LIBNAME_LIBRARIES})
 #target_include_directories(${PLUGIN_NAME} PRIVATE ${LIBNAME_INCLUDE_DIRS})
+
+
+# Aggiungi la cartella include
+target_include_directories(${PLUGIN_NAME} PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/ofSerial
+)
+
+# Aggiungi il sorgente .cpp di ofSerial al build del plugin
+target_sources(${PLUGIN_NAME} PRIVATE
+    ofSerial/ofSerial.cpp
+)

@@ -23,7 +23,7 @@
 
 #include "DataThreadPlugin.h"
 #include "DataThreadPluginEditor.h"
-
+#include "ofSerial.h"
 // added by lorenzo clerici
 #include <cmath>
 #ifndef M_PI
@@ -146,6 +146,10 @@ bool DataThreadPlugin::startAcquisition()
     producerRunning_.store(true);
     producerThread_ = std::thread(&DataThreadPlugin::producerLoop, this);
 
+    // avvia il thread di lettura seriale
+    serialRunning_.store(true);
+    serialThread_ = std::thread(&DataThreadPlugin::serialLoop, this);
+
     // added by lorenzo clerici
     // avvia il thread del DataThread (consumer)
     startThread();  // <--- fondamentale
@@ -182,6 +186,10 @@ bool DataThreadPlugin::stopAcquisition()
     // stop producer
     producerRunning_.store(false);
     if (producerThread_.joinable()) producerThread_.join();
+
+    // stop serial reader
+    serialRunning_.store(false);
+    if (serialThread_.joinable()) serialThread_.join();
 
 
     // added by lorenzo clerici
@@ -232,7 +240,6 @@ void DataThreadPlugin::parameterValueChanged (Parameter* /*parameter*/)
 // ---------------- Producer thread ----------------
 void DataThreadPlugin::producerLoop()
 { 
-
     using clock = std::chrono::steady_clock;
     const auto blockPeriod = std::chrono::duration<double>(SAMPLES_CB / FS_HZ);
     auto nextT = clock::now();
@@ -274,5 +281,30 @@ void DataThreadPlugin::producerLoop()
         // pacing temporale per evitare overflow della coda
         nextT += std::chrono::duration_cast<clock::duration>(blockPeriod);
         std::this_thread::sleep_until(nextT);
+    }
+}
+
+void DataThreadPlugin::serialLoop()
+{
+    ofSerial serial;
+    serial.setup("COM12", 115200);
+
+
+    const char* buf1 = "SAMPLERATE:30000\n";
+    serial.writeData(buf1, strlen(buf1));
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    const char* buf2 = "CONFIG\n";
+    serial.writeData(buf2, strlen(buf2));
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    const char* buf3 = "START\n";
+    serial.writeData(buf3, strlen(buf3));
+
+    const int BUFSIZE = 8005;
+    char buffer[BUFSIZE];
+
+    while (true) {
+        serial.readData(buffer, BUFSIZE);
     }
 }
