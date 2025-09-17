@@ -1,93 +1,65 @@
 #pragma once
+
+// As requested
+#include "ofSerial.h"
+
 #include <string>
-#include <functional>
-#include <mutex>
-#include <cstddef>
-#include <cstdint>
 
 /**
- * @brief Intan RHS2116 minimal command API (C++).
+ * @brief Thin wrapper for sending ASCII commands to the Intan RHS2116 over an already-open ofSerial.
  *
- * This class mirrors the Python API you provided, emitting the same ASCII commands over
- * a user-supplied write function (e.g., a serial port writer).
+ * This class DOES NOT open or close the serial port. It only writes commands.
+ * The caller is responsible for creating and configuring the ofSerial instance.
  *
- * Integration notes for Open Ephys:
- *  - Provide a WriteFn that writes bytes to your serial backend from within a Processor plugin.
- *  - Call methods from your Processor's thread or a dedicated device thread.
- *  - Use setLogger() to route messages to Open Ephys log/console if desired.
+ * Example usage (opening done elsewhere):
+ *   ofSerial serial;
+ *   serial.setup("COM4", 115200); // Open outside this module
+ *   IntanRHS2116 rhs(serial);
+ *   rhs.setSampleRate(20000);
+ *   rhs.configure();
+ *   rhs.startAcquisition();
  */
-class IntanRHS2116
-{
+class IntanRHS2116 {
 public:
-    /// Function that must synchronously write all bytes and return true on success.
-    using WriteFn = std::function<bool(const uint8_t* data, std::size_t size)>;
+    explicit IntanRHS2116(ofSerial& serial);
 
-    /// Optional logger callback (e.g., to Open Ephys console).
-    using LogFn   = std::function<void(const std::string& msg)>;
+    // Configuration commands
+    void setSampleRate(int sampleRate);
+    void setLowerBandwidth(double lowerBandwidthHz);
+    void setUpperBandwidth(double upperBandwidthHz);
+    void configure();
 
-    /**
-     * @brief Construct the driver with a write function.
-     * @param writer   Synchronous byte writer (e.g., serial port write). Must be valid for the object's lifetime.
-     * @param interCommandDelayMs  Delay after each command to give the device time to process (default 100 ms).
-     */
-    explicit IntanRHS2116(WriteFn writer, unsigned interCommandDelayMs = 100u);
+    // Acquisition control
+    void startAcquisition();
+    void stopAcquisition();
+    void reset();
 
-    // Non-copyable / movable
-    IntanRHS2116(const IntanRHS2116&) = delete;
-    IntanRHS2116& operator=(const IntanRHS2116&) = delete;
-    IntanRHS2116(IntanRHS2116&&) = delete;
-    IntanRHS2116& operator=(IntanRHS2116&&) = delete;
+    // Stimulation-related commands
+    void stim(int mode, int channel1, int channel2);
+    void setNumberOfClkNeg(int clkNeg);
+    void setNumberOfClkPos(int clkPos);
+    void setStimPolarity(int stimPol);
+    void setStimType(int stimType);
+    void setVoltage(double voltage);
+    void setStepSize(int stepSizeNa);
+    void setNegStimCurrent(int negStimCurrent);
+    void setPosStimCurrent(int posStimCurrent);
 
-    /**
-     * @brief Set optional logger.
-     */
-    void setLogger(LogFn logger);
+    // Note: keeping the original protocol string spelling ("CONTINOUS_STIM")
+    void setContinuousStim(int mode);
 
-    /**
-     * @brief Adjust inter-command delay (ms).
-     */
-    void setInterCommandDelay(unsigned ms);
+    void setNumberOfClkCR(int clkCR);
+    void setStateCR(int stateCR);
 
-    // ------- API methods (1:1 with the original Python names/behavior) -------
-    bool set_sample_rate(int sample_rate);
-    bool set_lower_bandwidth(float lower_bandwidth);
-    bool set_upper_bandwidth(float upper_bandwidth);
-
-    bool configure();
-    bool start_acquisition();
-    bool stop_acquisition();
-    bool reset();
-
-    bool stim(const std::string& mode, int channel1, int channel2);
-
-    bool set_number_of_clk_neg(int clk_neg);
-    bool set_number_of_clk_pos(int clk_pos);
-
-    bool set_stim_polarity(const std::string& stim_pol);
-    bool set_stim_type(const std::string& stim_type);
-
-    bool set_voltage(float voltage);
-    bool set_step_size(float step_size);
-
-    bool set_neg_stim_current(float neg_stim_current);
-    bool set_pos_stim_current(float pos_stim_current);
-
-    // NOTE: The original Python command name is "CONTINOUS_STIM" (typo preserved intentionally).
-    bool set_continuous_stim(int mode);
-
-    bool set_number_of_clk_CR(int clk_CR);
-    bool set_state_CR(int state_CR);
-
-    bool set_dsp_enable(int enable);
-    bool set_dsp_frequency(float frequency);
+    // DSP controls
+    void setDspEnable(bool enable);
+    void setDspFrequency(double frequencyHz);
 
 private:
-    bool sendCommand(const std::string& command, bool appendNewline = true);
-    void log(const std::string& msg);
-    void sleepMs(unsigned ms);
+    ofSerial& serial_;
+    static constexpr unsigned int kWriteDelayMs = 100; // inter-command guard time
 
-    WriteFn writer_;
-    LogFn   logger_{};
-    unsigned interDelayMs_{100u};
-    std::mutex ioMutex_;
+    // Low-level helper to send a single ASCII command with trailing newline if not present.
+    // Logs to std::cout / std::cerr. Returns true on success.
+    bool sendCommand(const std::string& command);
 };
