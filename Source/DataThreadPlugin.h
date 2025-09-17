@@ -66,6 +66,7 @@ public:
     String handleConfigMessage (const String& msg) override;
     void registerParameters() override;
     void parameterValueChanged (Parameter* parameter) override;
+    bool setSerialPort(const std::string& name);
 
 private:
     // ===================== Hardware / packet layout =========================
@@ -132,7 +133,7 @@ private:
     int64 totalSamples_ = 0;          // monotonic sample counter for sampleNumbers[]
 
     // ===================== Basic serial config =====================
-    std::string serialPort_ = "COM12";
+    std::string serialPort_ = "COM3";
     int         serialBaud_ = 115200;
 
     // ===================== Helpers: little-endian readers =====================

@@ -22,10 +22,58 @@
  */
 
 #include "DataThreadPluginEditor.h"
+#include <iostream>
 
+// ========================================== DataThreadPluginEditor impl ==========================================
 DataThreadPluginEditor::DataThreadPluginEditor (GenericProcessor* parentNode, DataThreadPlugin* plugin)
-    : GenericEditor (parentNode)
+    : GenericEditor (parentNode), thread(plugin)
 {
-    desiredWidth = 300; // sets the width of the plugin editor
-    this->thread = thread;
+    // Set size of the editor window
+    desiredWidth = 300;
+
+    // Port label
+    portLabel.setText("Port:", juce::dontSendNotification);
+    portLabel.setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(portLabel);
+
+    // ComboBox for serial ports
+    comBox.setTextWhenNoChoicesAvailable("No serial ports found");
+    comBox.setTextWhenNothingSelected("Select");
+
+    // Auto-refresh ports when the user clicks the drop-down
+    comBox.beforePopup = [this]()
+    {
+        // Rebuild the list just-in-time
+        comBox.clear(juce::dontSendNotification);
+
+        auto devices = serial.getDeviceList(); // requires ofSerial.h/.cpp
+
+        int id = 1;
+        for (auto& d : devices)
+        {
+            // You can switch to d.getDevicePath() if you prefer strictly "COMx" / "/dev/tty*".
+            comBox.addItem (juce::String(d.getDevicePath().c_str()), id++);
+        }
+    };
+
+    addAndMakeVisible(comBox);
+
+    comBox.onChange = [this]()
+    {
+        auto selected = comBox.getText();
+        if (selected.isNotEmpty())
+        {
+            thread->setSerialPort(selected.toStdString());
+            std::cout << "Selected port: " << selected << "\n";
+        }
+    };
+}
+// =================================================================================================================
+
+
+void DataThreadPluginEditor::resized()
+{
+    portLabel.setBounds(10, 20, 40, 40);   // x, y, larghezza, altezza
+    comBox.setBounds(60, 30, 100, 20);     // x, y, larghezza, altezza
+
 }

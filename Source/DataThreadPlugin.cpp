@@ -221,7 +221,10 @@ bool DataThreadPlugin::updateBuffer()
 bool DataThreadPlugin::stopAcquisition()
 {
     // Stop device
-    if (rhs_) rhs_->stopAcquisition();
+    if (rhs_){
+        rhs_->stopAcquisition();
+        rhs_->reset();
+    } 
 
     serialRunning_.store(false);
     if (serialThread_.joinable()) serialThread_.join();
@@ -249,14 +252,7 @@ String DataThreadPlugin::handleConfigMessage (const String& /*msg*/) { return ""
 void DataThreadPlugin::registerParameters() {}
 void DataThreadPlugin::parameterValueChanged (Parameter* /*parameter*/) {}
 
-// ===================== Serial I/O thread (minimal framing only) =====================
-
-/**
- * @brief Serial I/O thread. Minimal logic: find 0xAA by reading 1 byte at a time,
- * then read the next 8004 bytes (timestamp + payload) and enqueue them.
- *
- * No parsing, no validation, no extra checks. The consumer thread parses everything.
- */
+// ========================================== Serial I/O thread (minimal framing only) ==========================================
 void DataThreadPlugin::serialLoop()
 {
     // Seek 0xAA, then read 8004 bytes and push to queue. Repeat forever while running.
@@ -286,4 +282,11 @@ void DataThreadPlugin::serialLoop()
 
         queue_->pushReady(idx);
     }
+}
+// ==============================================================================================================================
+
+bool DataThreadPlugin::setSerialPort(const std::string& name)
+{
+    serialPort_ = name;   // es. "COM2"
+    return true;
 }

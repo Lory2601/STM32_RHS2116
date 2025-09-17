@@ -24,23 +24,41 @@
 #ifndef DATATHREADPLUGINEDITOR_H_DEFINED
 #define DATATHREADPLUGINEDITOR_H_DEFINED
 
-#include <EditorHeaders.h>
+#pragma once
 
+#include <EditorHeaders.h>
 #include "DataThreadPlugin.h"
+#include "ofSerial.h" // uses getDeviceList() to enumerate serial ports
 
 class DataThreadPluginEditor : public GenericEditor
 {
 public:
-    /** The class constructor, used to initialize any members. */
-    DataThreadPluginEditor (GenericProcessor* parentNode, DataThreadPlugin* thread);
+    /** Minimal editor: only a ComboBox that lists serial ports. */
+    DataThreadPluginEditor (GenericProcessor* parentNode, DataThreadPlugin* plugin);
+    ~DataThreadPluginEditor() override = default;
 
-    /** The class destructor, used to deallocate memory */
-    ~DataThreadPluginEditor() {}
+    void resized() override;
 
 private:
+    DataThreadPlugin* thread = nullptr;
 
-    /** A pointer to the underlying DataThreadPlugin */
-    DataThreadPlugin* thread;
+    /** ComboBox that refreshes itself right before the popup is shown. */
+    struct RefreshingComboBox : public juce::ComboBox
+    {
+        std::function<void()> beforePopup;
+
+        /** Refresh the items on click, then open the popup as usual. */
+        void mouseDown (const juce::MouseEvent& e) override
+        {
+            if (beforePopup) beforePopup();
+            juce::ComboBox::mouseDown(e);
+        }
+    } comBox;
+
+    ofSerial serial; // used only to enumerate ports with getDeviceList()
+
+    juce::Label portLabel;
 };
+
 
 #endif
