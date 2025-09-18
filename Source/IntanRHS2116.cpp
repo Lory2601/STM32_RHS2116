@@ -51,40 +51,40 @@ bool IntanRHS2116::sendCommand(const std::string& command) {
 // ====== Public API: configuration ==========================================
 void IntanRHS2116::setSampleRate(int sampleRate) {
     sendCommand("SAMPLERATE:" + std::to_string(sampleRate));
-    std::cout << "Command sent: SAMPLERATE with value " << sampleRate << "\n";
+    std::cout << "[STM32-RHS2116] Command sent: SAMPLERATE with value " << sampleRate << "\n";
 }
 
 void IntanRHS2116::setLowerBandwidth(double lowerBandwidthHz) {
     sendCommand("LOWERBANDWIDTH:" + std::to_string(lowerBandwidthHz));
-    std::cout << "Command sent: LOWERBANDWIDTH with value "
+    std::cout << "[STM32-RHS2116] Command sent: LOWERBANDWIDTH with value "
               << lowerBandwidthHz << "\n";
 }
 
 void IntanRHS2116::setUpperBandwidth(double upperBandwidthHz) {
     sendCommand("UPPERBANDWIDTH:" + std::to_string(upperBandwidthHz));
-    std::cout << "Command sent: UPPERBANDWIDTH with value "
+    std::cout << "[STM32-RHS2116] Command sent: UPPERBANDWIDTH with value "
               << upperBandwidthHz << "\n";
 }
 
 void IntanRHS2116::configure() {
     sendCommand("CONFIG");
-    std::cout << "Command sent: CONFIG\n";
+    std::cout << "[STM32-RHS2116] Command sent: CONFIG\n";
 }
 
 // ====== Public API: acquisition ============================================
 void IntanRHS2116::startAcquisition() {
     sendCommand("START");
-    std::cout << "Command sent: START\n";
+    std::cout << "[STM32-RHS2116] Command sent: START\n";
 }
 
 void IntanRHS2116::stopAcquisition() {
     sendCommand("STOP");
-    std::cout << "Command sent: STOP\n";
+    std::cout << "[STM32-RHS2116] Command sent: STOP\n";
 }
 
 void IntanRHS2116::reset() {
     sendCommand("RESET");
-    std::cout << "Command sent: RESET\n";
+    std::cout << "[STM32-RHS2116] Command sent: RESET\n";
 }
 
 // ====== Public API: stimulation & timing ===================================
@@ -92,74 +92,74 @@ void IntanRHS2116::stim(int mode, int channel1, int channel2) {
     sendCommand("STIM:" + std::to_string(mode) + "," +
                 std::to_string(channel1) + "," +
                 std::to_string(channel2));
-    std::cout << "Command sent: STIM with mode " << mode
+    std::cout << "[STM32-RHS2116] Command sent: STIM with mode " << mode
               << ", channel1 " << channel1
               << ", channel2 " << channel2 << "\n";
 }
 
 void IntanRHS2116::setNumberOfClkNeg(int clkNeg) {
     sendCommand("CLK_NEG:" + std::to_string(clkNeg));
-    std::cout << "Command sent: CLK_NEG with " << clkNeg << "\n";
+    std::cout << "[STM32-RHS2116] Command sent: CLK_NEG with " << clkNeg << "\n";
 }
 
 void IntanRHS2116::setNumberOfClkPos(int clkPos) {
     sendCommand("CLK_POS:" + std::to_string(clkPos));
-    std::cout << "Command sent: CLK_POS with " << clkPos << "\n";
+    std::cout << "[STM32-RHS2116] Command sent: CLK_POS with " << clkPos << "\n";
 }
 
 void IntanRHS2116::setStimPolarity(int stimPol) {
     sendCommand("STIM_POL:" + std::to_string(stimPol));
-    std::cout << "Command sent: STIM_POL with " << stimPol << "\n";
+    std::cout << "[STM32-RHS2116] Command sent: STIM_POL with " << stimPol << "\n";
 }
 
 void IntanRHS2116::setStimType(int stimType) {
     sendCommand("STIM_TYPE:" + std::to_string(stimType));
-    std::cout << "Command sent: STIM_TYPE with " << stimType << "\n";
+    std::cout << "[STM32-RHS2116] Command sent: STIM_TYPE with " << stimType << "\n";
 }
 
 void IntanRHS2116::setVoltage(double voltage) {
     sendCommand("VOLTAGE:" + std::to_string(voltage));
-    std::cout << "Command sent: VOLTAGE with " << voltage << "V\n";
+    std::cout << "[STM32-RHS2116] Command sent: VOLTAGE with " << voltage << "V\n";
 }
 
 void IntanRHS2116::setStepSize(int stepSizeNa) {
     sendCommand("STEP_SIZE:" + std::to_string(stepSizeNa));
-    std::cout << "Command sent: STEP_SIZE with " << stepSizeNa << " nA\n";
+    std::cout << "[STM32-RHS2116] Command sent: STEP_SIZE with " << stepSizeNa << " nA\n";
 }
 
 void IntanRHS2116::setNegStimCurrent(int negStimCurrent) {
     sendCommand("NEG_CURRENT:" + std::to_string(negStimCurrent));
-    std::cout << "Command sent: NEG_CURRENT with " << negStimCurrent << "\n";
+    std::cout << "[STM32-RHS2116] Command sent: NEG_CURRENT with " << negStimCurrent << "\n";
 }
 
 void IntanRHS2116::setPosStimCurrent(int posStimCurrent) {
     sendCommand("POS_CURRENT:" + std::to_string(posStimCurrent));
-    std::cout << "Command sent: POS_CURRENT with " << posStimCurrent << "\n";
+    std::cout << "[STM32-RHS2116] Command sent: POS_CURRENT with " << posStimCurrent << "\n";
 }
 
 // Note: spelling "CONTINOUS_STIM" kept to match original protocol string.
 void IntanRHS2116::setContinuousStim(int mode) {
     sendCommand("CONTINOUS_STIM:" + std::to_string(mode));
-    std::cout << "Command sent: CONTINOUS_STIM with " << mode << "\n";
+    std::cout << "[STM32-RHS2116] Command sent: CONTINOUS_STIM with " << mode << "\n";
 }
 
 void IntanRHS2116::setNumberOfClkCR(int clkCR) {
     sendCommand("CLK_CR:" + std::to_string(clkCR));
-    std::cout << "Command sent: CLK_CR with " << clkCR << "\n";
+    std::cout << "[STM32-RHS2116] Command sent: CLK_CR with " << clkCR << "\n";
 }
 
 void IntanRHS2116::setStateCR(int stateCR) {
     sendCommand("STATE_CR:" + std::to_string(stateCR));
-    std::cout << "Command sent: STATE_CR with " << stateCR << "\n";
+    std::cout << "[STM32-RHS2116] Command sent: STATE_CR with " << stateCR << "\n";
 }
 
 // ====== Public API: DSP =====================================================
 void IntanRHS2116::setDspEnable(bool enable) {
     sendCommand(std::string("DSP_EN:") + (enable ? "1" : "0"));
-    std::cout << "Command sent: DSP_EN with value " << (enable ? 1 : 0) << "\n";
+    std::cout << "[STM32-RHS2116] Command sent: DSP_EN with value " << (enable ? 1 : 0) << "\n";
 }
 
 void IntanRHS2116::setDspFrequency(int kFactor) {
     sendCommand("DSP_FREQ:" + std::to_string(kFactor));
-    std::cout << "Command sent: DSP_FREQ with k value " << kFactor << "\n";
+    std::cout << "[STM32-RHS2116] Command sent: DSP_FREQ with k value " << kFactor << "\n";
 }

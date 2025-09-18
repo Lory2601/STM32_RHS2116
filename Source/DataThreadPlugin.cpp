@@ -102,7 +102,7 @@ void DataThreadPlugin::updateSettings (OwnedArray<ContinuousChannel>* continuous
             "rhs_stream",
             "RHS2116 hardware stream (16 channels)",
             "rhs_stream_id",
-            FS_HZ
+            sampleRateHz_
         };
         stream_ = new DataStream(ds);
         sourceStreams->add(stream_);
@@ -140,11 +140,22 @@ bool DataThreadPlugin::startAcquisition()
     // Open serial port and configure the device
     serial_.setup(serialPort_, serialBaud_);
     rhs_ = std::make_unique<IntanRHS2116>(serial_);
-    rhs_->setSampleRate(static_cast<int>(FS_HZ));
-    rhs_->setLowerBandwidth(5.0);
-    rhs_->setUpperBandwidth(7500.0);
+
+
+    // Apply requested settings
+    rhs_->setSampleRate(sampleRateHz_);
+    rhs_->setLowerBandwidth(lowerBwHz_);
+    rhs_->setUpperBandwidth(upperBwHz_);
+    rhs_->setDspEnable(dspEnabled_);
+    rhs_->setDspFrequency(dspK_);
+
+    // Configure the device
     rhs_->configure();
+
+    // Wait a bit for the device to settle
     std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    // Start acquisition
     rhs_->startAcquisition();
 
     serialRunning_.store(true);
@@ -175,7 +186,7 @@ bool DataThreadPlugin::updateBuffer()
         // 1) Timestamp (u32 LE), device tick = 100 us
         const uint32 ticks  = readLE32(raw.bytes.data());
         const double ts0_s  = (ticks * TS_TICK_US) * 1e-6;  // seconds
-        const double dt_s   = 1.0 / FS_HZ;
+        const double dt_s   = 1.0 / sampleRateHz_;
 
         for (int i = 0; i < BLOCK_NSAMP; ++i) {
             const int64 snum = totalSamples_ + i;
@@ -284,8 +295,46 @@ void DataThreadPlugin::serialLoop()
 }
 // ==============================================================================================================================
 
+
+
+// ===================== DataThreadPluginEditor impl =====================
 bool DataThreadPlugin::setSerialPort(const std::string& name)
 {
     serialPort_ = name;   // es. "COM2"
+    return true;
+}
+
+bool DataThreadPlugin::setSampleRate(int hz)
+{
+    // Store-only; device will be configured on startAcquisition().
+    if (hz <= 0) return false;
+    sampleRateHz_ = hz;
+    return true;
+}
+
+bool DataThreadPlugin::setLowerBandwidthHz(double hz)
+{
+    if (hz <= 0.0) return false;
+    lowerBwHz_ = hz;
+    return true;
+}
+
+bool DataThreadPlugin::setUpperBandwidthHz(double hz)
+{
+    if (hz <= 0.0) return false;
+    upperBwHz_ = hz;
+    return true;
+}
+
+bool DataThreadPlugin::setDspEnabled(bool enabled)
+{
+    dspEnabled_ = enabled;
+    return true;
+}
+
+bool DataThreadPlugin::setDspKFactor(int k)
+{
+    if (k < 0) return false;
+    dspK_ = k;
     return true;
 }

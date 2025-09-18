@@ -61,7 +61,7 @@ DataThreadPluginEditor::DataThreadPluginEditor (GenericProcessor* parentNode, Da
         if (selected.isNotEmpty())
         {
             thread->setSerialPort(selected.toStdString());
-            std::cout << "Selected port: " << selected << "\n";
+            std::cout << "[STM32-RHS2116] Selected port: " << selected << "\n";
         }
     };
     //--------------------------------------------------------------------------------------------------------------
@@ -89,9 +89,9 @@ DataThreadPluginEditor::DataThreadPluginEditor (GenericProcessor* parentNode, Da
         int selected = sampleRateBox.getText().getIntValue();
         if (selected > 0)
         {
-            std::cout << "Selected sample rate: " << selected << " Hz\n";
+            std::cout << "[STM32-RHS2116] Selected sample rate: " << selected << " Hz\n";
 
-            // thread->setSampleRate(selected);
+            thread->setSampleRate(selected);
 
             // Rebuild DSP frequency list to reflect new fs
             const int prevN = dspFreqBox.getSelectedId(); // try to keep same N
@@ -134,9 +134,9 @@ DataThreadPluginEditor::DataThreadPluginEditor (GenericProcessor* parentNode, Da
         const double hz = lowerBwBox.getText().getDoubleValue();
         if (hz > 0.0)
         {
-            std::cout << "Selected lower bandwidth: " << hz << " Hz\n";
+            std::cout << "[STM32-RHS2116] Selected lower bandwidth: " << hz << " Hz\n";
 
-            // thread->setLowerBandwidthHz(hz);
+            thread->setLowerBandwidthHz(hz);
         }
     };
 
@@ -173,9 +173,9 @@ DataThreadPluginEditor::DataThreadPluginEditor (GenericProcessor* parentNode, Da
         const double hz = upperBwBox.getText().getDoubleValue();
         if (hz > 0.0)
         {
-            std::cout << "Selected upper bandwidth: " << hz << " Hz\n";
+            std::cout << "[STM32-RHS2116] Selected upper bandwidth: " << hz << " Hz\n";
 
-            // thread->setUpperBandwidthHz(hz);
+            thread->setUpperBandwidthHz(hz);
         }
     };
 
@@ -205,8 +205,8 @@ DataThreadPluginEditor::DataThreadPluginEditor (GenericProcessor* parentNode, Da
     {
         const bool enabled = dspEnableButton.getToggleState();
         if (thread != nullptr){
-        //thread->setDspEnabled(enabled);
-        std::cout << "DSP " << (enabled ? "ENABLED" : "DISABLED") << "\n";
+        thread->setDspEnabled(enabled);
+        std::cout << "[STM32-RHS2116] DSP " << (enabled ? "ENABLED" : "DISABLED") << "\n";
         }
     };
     //--------------------------------------------------------------------------------------------------------------
@@ -240,19 +240,32 @@ DataThreadPluginEditor::DataThreadPluginEditor (GenericProcessor* parentNode, Da
             const double fc = k * static_cast<double>(fs);
 
             // Console info (C++ and C-style)
-            std::cout << "Selected DSP cutoff: " << fc << " Hz (k=" << k << ", N=" << N << ")\n";
-            std::printf("[DSP] fc=%.3f Hz, k=%.6f (N=%d)\n", fc, k, N);
+            std::cout << "[STM32-RHS2116] Selected DSP cutoff: " << fc << " Hz (k=" << k << ", N=" << N << ")\n";
 
             if (thread != nullptr)
             {
                 // Pass only the K factor to the processing thread
-                // thread->setDspKFactor(k);
+                thread->setDspKFactor(N);
             }
         }
     };
     //--------------------------------------------------------------------------------------------------------------
 
+    // ---- Sync plugin with GUI defaults (avoid any mismatch at startup) ----
+    if (thread != nullptr)
+    {
+        const int    fs     = sampleRateBox.getText().getIntValue();
+        const double lbwHz  = lowerBwBox.getText().getDoubleValue();
+        const double ubwHz  = upperBwBox.getText().getDoubleValue();
+        const bool   dspOn  = dspEnableButton.getToggleState();
+        const int N_as_K = dspFreqBox.getSelectedId(); // 1..15
 
+        thread->setSampleRate(fs);
+        thread->setLowerBandwidthHz(lbwHz);
+        thread->setUpperBandwidthHz(ubwHz);
+        thread->setDspEnabled(dspOn);
+        thread->setDspKFactor(N_as_K);
+    }
 
 }
 // =================================================================================================================
@@ -292,8 +305,8 @@ void DataThreadPluginEditor::resized()
     comBox.setBounds(125, 30, 80, 20);
 
     // sample rate
-    sampleRateLabel.setBounds(215, 30, 120, 20);
-    sampleRateBox.setBounds(335, 30, 80, 20);
+    sampleRateLabel.setBounds(215, 30, 125, 20);
+    sampleRateBox.setBounds(340, 30, 80, 20);
 
     // lower bandwidth
     lowerBwLabel.setBounds(5, 55, 120, 40);
@@ -301,7 +314,7 @@ void DataThreadPluginEditor::resized()
 
     // upper bandwidth
     upperBwLabel.setBounds(215, 55, 120, 40);
-    upperBwBox.setBounds(335, 65, 80, 20);
+    upperBwBox.setBounds(340, 65, 80, 20);
 
     // dsp enable
     dspEnableLabel.setBounds(5, 90, 120, 40);
@@ -309,6 +322,6 @@ void DataThreadPluginEditor::resized()
 
     // dsp freq
     dspFreqLabel.setBounds(215, 90, 120, 40);
-    dspFreqBox.setBounds(335, 100, 80, 20);
+    dspFreqBox.setBounds(340, 100, 80, 20);
 
 }

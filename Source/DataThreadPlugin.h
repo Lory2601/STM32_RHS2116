@@ -68,6 +68,13 @@ public:
     void parameterValueChanged (Parameter* parameter) override;
     bool setSerialPort(const std::string& name);
 
+    // -------- Runtime configuration setters (store-only; applied on start) --------
+    bool setSampleRate(int hz);
+    bool setLowerBandwidthHz(double hz);
+    bool setUpperBandwidthHz(double hz);
+    bool setDspEnabled(bool enabled);
+    bool setDspKFactor(int k);
+
 private:
     // ===================== Hardware / packet layout =========================
     static constexpr double FS_HZ           = 30000.0;  // device sampling rate (Hz)
@@ -132,9 +139,14 @@ private:
 
     int64 totalSamples_ = 0;          // monotonic sample counter for sampleNumbers[]
 
-    // ===================== Basic serial config =====================
-    std::string serialPort_ = "COM3";
     int         serialBaud_ = 115200;
+    // --------------------- Runtime config (applied on start) ---------------------
+    std::string serialPort_ = "COM3";
+    int    sampleRateHz_ = 0;
+    double lowerBwHz_    = 0.0;
+    double upperBwHz_    = 0.0;
+    bool   dspEnabled_   = false;
+    int    dspK_         = 0; 
 
     // ===================== Helpers: little-endian readers =====================
     static inline uint16 readLE16(const uint8* p) {
