@@ -28,12 +28,49 @@
 
 #include <EditorHeaders.h>
 #include "DataThreadPlugin.h"
-#include "ofSerial.h" // uses getDeviceList() to enumerate serial ports
+#include "ofSerial.h" 
+
+
+// ================= Default values =================
+// Default sample rate [Hz]
+#define DEFAULT_SAMPLE_RATE  30000  
+
+// Default upper bandwidth [Hz]
+#define DEFAULT_UPPER_BW     3  
+
+// Default lower bandwidth [Hz]
+#define DEFAULT_LOWER_BW     15
+
+// Default DSP enable (0=off, 1=on)
+#define DSP_DEFAULT_ENABLE  1
+
+// === Add after existing defaults ===
+#define DEFAULT_DSP_N       12
+
+// kfreq lookup table (index = N; 0 is differentiator)
+static constexpr double DSP_K_TABLE[16] = {
+    0.0,        // N=0 -> differentiator (no real cutoff)
+    0.1103,     // 1
+    0.04579,    // 2
+    0.02125,    // 3
+    0.01027,    // 4
+    0.005053,   // 5
+    0.002506,   // 6
+    0.001248,   // 7
+    0.0006229,  // 8
+    0.0003112,  // 9
+    0.0001555,  // 10
+    0.00007773, // 11
+    0.00003886, // 12
+    0.00001943, // 13
+    0.000009714,// 14
+    0.000004857 // 15
+};
+
 
 class DataThreadPluginEditor : public GenericEditor
 {
 public:
-    /** Minimal editor: only a ComboBox that lists serial ports. */
     DataThreadPluginEditor (GenericProcessor* parentNode, DataThreadPlugin* plugin);
     ~DataThreadPluginEditor() override = default;
 
@@ -41,13 +78,11 @@ public:
 
 private:
     DataThreadPlugin* thread = nullptr;
-
-    /** ComboBox that refreshes itself right before the popup is shown. */
     struct RefreshingComboBox : public juce::ComboBox
     {
         std::function<void()> beforePopup;
 
-        /** Refresh the items on click, then open the popup as usual. */
+        // Refresh the items on click
         void mouseDown (const juce::MouseEvent& e) override
         {
             if (beforePopup) beforePopup();
@@ -55,9 +90,36 @@ private:
         }
     } comBox;
 
-    ofSerial serial; // used only to enumerate ports with getDeviceList()
+    // Serial port handler
+    ofSerial serial;
 
+    // Serial port label
     juce::Label portLabel;
+
+    // Sample rate controls
+    juce::Label sampleRateLabel;
+    juce::ComboBox sampleRateBox;
+
+    // upper Bandwidth controls
+    juce::Label upperBwLabel;
+    juce::ComboBox upperBwBox;
+
+    // lower Bandwidth controls
+    juce::Label lowerBwLabel;
+    juce::ComboBox lowerBwBox;
+
+    // DSP enable controls
+    juce::Label     dspEnableLabel;
+    juce::TextButton dspEnableButton;
+
+    // DSP cutoff controls
+    juce::Label   dspFreqLabel;
+    juce::ComboBox dspFreqBox;
+
+    // Rebuilds the DSP frequency dropdown according to the current sample rate
+    void rebuildDspFreqItems (int fsample);
+
+
 };
 
 

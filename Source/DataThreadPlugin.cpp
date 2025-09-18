@@ -252,10 +252,10 @@ String DataThreadPlugin::handleConfigMessage (const String& /*msg*/) { return ""
 void DataThreadPlugin::registerParameters() {}
 void DataThreadPlugin::parameterValueChanged (Parameter* /*parameter*/) {}
 
-// ========================================== Serial I/O thread (minimal framing only) ==========================================
+// ===================================================== Serial I/O thread  =====================================================
 void DataThreadPlugin::serialLoop()
 {
-    // Seek 0xAA, then read 8004 bytes and push to queue. Repeat forever while running.
+    // Seek 0xAA, then read 8004 bytes and push to queue.
     uint8 b = 0;
 
     while (serialRunning_.load())
@@ -270,9 +270,7 @@ void DataThreadPlugin::serialLoop()
         // 2) Acquire a raw slot, read 8004 bytes (timestamp + payload), enqueue
         int idx = queue_->acquireFreeBlocking(serialRunning_);
         if (idx < 0) break;
-
         auto& raw = queue_->at(idx);
-
         size_t got = 0;
         while (got < static_cast<size_t>(BLOCK_BYTES) && serialRunning_.load()) {
             long r = serial_.readData(reinterpret_cast<char*>(raw.bytes.data() + got),
@@ -280,6 +278,7 @@ void DataThreadPlugin::serialLoop()
             if (r > 0) got += static_cast<size_t>(r);
         }
 
+        //push to ready queue if we got a full packet
         queue_->pushReady(idx);
     }
 }

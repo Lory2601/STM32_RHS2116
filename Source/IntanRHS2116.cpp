@@ -159,7 +159,7 @@ void IntanRHS2116::setDspEnable(bool enable) {
     std::cout << "Command sent: DSP_EN with value " << (enable ? 1 : 0) << "\n";
 }
 
-void IntanRHS2116::setDspFrequency(double frequencyHz) {
-    sendCommand("DSP_FREQ:" + std::to_string(frequencyHz));
-    std::cout << "Command sent: DSP_FREQ with value " << frequencyHz << "\n";
+void IntanRHS2116::setDspFrequency(int kFactor) {
+    sendCommand("DSP_FREQ:" + std::to_string(kFactor));
+    std::cout << "Command sent: DSP_FREQ with k value " << kFactor << "\n";
 }

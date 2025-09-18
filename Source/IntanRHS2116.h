@@ -53,7 +53,7 @@ public:
 
     // DSP controls
     void setDspEnable(bool enable);
-    void setDspFrequency(double frequencyHz);
+    void setDspFrequency(int kFactor);
 
 private:
     ofSerial& serial_;
