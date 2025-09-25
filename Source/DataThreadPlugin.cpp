@@ -1,11 +1,19 @@
 /*
- ------------------------------------------------------------------
+ * Project : BRAIN PLUS
+ * File    : DataThreadPlugin.cpp
+ * Author  : Clerici Lorenzo (ISEA)
+ * Created : 2025-09-19
+ * Purpose : Data acquisition plugin for Intan RHS2116 over a serial interface.
+ *
+ * Data-acquisition plugin for the Intan RHS2116 over a serial link.
+ * Responsibilities:
+ *   - Configure device (rate, bandwidth, DSP) and manage start/stop.
+ *   - Serial I/O thread: sync on 0xAA, read fixed-size frames, enqueue.
+ *   - Packet pool queue for lock-efficient producer/consumer flow.
+ *   - Parse/de-interleave samples, convert to µV, publish to DataBuffer.
+ *   - Expose Open Ephys/JUCE DataThread interface and editor stub.
+ */
 
- This file is part of the Open Ephys GUI
- Copyright (...)
-
- ------------------------------------------------------------------
-*/
 
 #include "DataThreadPlugin.h"
 #include "DataThreadPluginEditor.h"
@@ -17,7 +25,7 @@
 #include <thread>
 #include <chrono>
 
-// ===================== PacketPoolQueue impl =====================
+// =================================================== PacketPoolQueue impl =====================================================
 DataThreadPlugin::PacketPoolQueue::PacketPoolQueue(int n)
 : storage_(static_cast<size_t>(n))
 {
@@ -62,9 +70,16 @@ int DataThreadPlugin::PacketPoolQueue::readySize() const {
     std::lock_guard<std::mutex> lk(m_);
     return static_cast<int>(ready_.size());
 }
+// ==============================================================================================================================
 
-// ===================== DataThreadPlugin impl =====================
 
+
+
+
+
+
+
+// ================================================= DataThreadPluginEditor impl ================================================
 struct PluginSettingsObject { /* reserved */ };
 
 DataThreadPlugin::DataThreadPlugin (SourceNode* sn)
@@ -83,7 +98,16 @@ bool DataThreadPlugin::foundInputSource()
 {
     return true;
 }
+// ==============================================================================================================================
 
+
+
+
+
+
+
+
+// =================================================== update settings ==========================================================
 void DataThreadPlugin::updateSettings (OwnedArray<ContinuousChannel>* continuousChannels,
                                        OwnedArray<EventChannel>* eventChannels,
                                        OwnedArray<SpikeChannel>* /*spikeChannels*/,
@@ -132,7 +156,16 @@ void DataThreadPlugin::updateSettings (OwnedArray<ContinuousChannel>* continuous
     totalSamples_ = 0;
     if (queue_) queue_->reset();
 }
+// ==============================================================================================================================
 
+
+
+
+
+
+
+
+// ===================================================== start acquisition ======================================================
 bool DataThreadPlugin::startAcquisition()
 {
     totalSamples_ = 0;
@@ -164,7 +197,16 @@ bool DataThreadPlugin::startAcquisition()
     startThread(); // kicks the updateBuffer() loop
     return true;
 }
+// ==============================================================================================================================
 
+
+
+
+
+
+
+
+// =================================================== update buffer ============================================================
 bool DataThreadPlugin::updateBuffer()
 {
     // Parse raw packets and push to DataBuffer. No I/O here.
@@ -228,7 +270,16 @@ bool DataThreadPlugin::updateBuffer()
 
     return true;
 }
+// ==============================================================================================================================
 
+
+
+
+
+
+
+
+// =================================================== stop acquisition =========================================================
 bool DataThreadPlugin::stopAcquisition()
 {
     // Stop device
@@ -249,19 +300,14 @@ bool DataThreadPlugin::stopAcquisition()
 
     return true;
 }
+// ==============================================================================================================================
 
-void DataThreadPlugin::resizeBuffers() { /* no-op */ }
 
-std::unique_ptr<GenericEditor> DataThreadPlugin::createEditor (SourceNode* sn)
-{
-    std::unique_ptr<DataThreadPluginEditor> editor = std::make_unique<DataThreadPluginEditor> (sn, this);
-    return editor;
-}
 
-void DataThreadPlugin::handleBroadcastMessage (const String& /*msg*/, const int64 /*messageTimeMilliseconds*/) {}
-String DataThreadPlugin::handleConfigMessage (const String& /*msg*/) { return ""; }
-void DataThreadPlugin::registerParameters() {}
-void DataThreadPlugin::parameterValueChanged (Parameter* /*parameter*/) {}
+
+
+
+
 
 // ===================================================== Serial I/O thread  =====================================================
 void DataThreadPlugin::serialLoop()
@@ -297,10 +343,15 @@ void DataThreadPlugin::serialLoop()
 
 
 
-// ===================== DataThreadPluginEditor impl =====================
+
+
+
+
+
+// ================================================= DataThreadPluginEditor impl ================================================
 bool DataThreadPlugin::setSerialPort(const std::string& name)
 {
-    serialPort_ = name;   // es. "COM2"
+    serialPort_ = name;
     return true;
 }
 
@@ -338,3 +389,26 @@ bool DataThreadPlugin::setDspKFactor(int k)
     dspK_ = k;
     return true;
 }
+// ==============================================================================================================================
+
+
+
+
+
+
+
+
+// ================================================= other DataThread methods ===================================================
+void DataThreadPlugin::resizeBuffers() { /* no-op */ }
+
+std::unique_ptr<GenericEditor> DataThreadPlugin::createEditor (SourceNode* sn)
+{
+    std::unique_ptr<DataThreadPluginEditor> editor = std::make_unique<DataThreadPluginEditor> (sn, this);
+    return editor;
+}
+
+void DataThreadPlugin::handleBroadcastMessage (const String& /*msg*/, const int64 /*messageTimeMilliseconds*/) {}
+String DataThreadPlugin::handleConfigMessage (const String& /*msg*/) { return ""; }
+void DataThreadPlugin::registerParameters() {}
+void DataThreadPlugin::parameterValueChanged (Parameter* /*parameter*/) {}
+// ==============================================================================================================================

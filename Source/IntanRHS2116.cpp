@@ -5,7 +5,6 @@
 #include <chrono>
 
 namespace {
-    // Ensures there is exactly one '\n' terminator at the end of the command.
     std::string withNewline(std::string cmd) {
         if (cmd.empty() || cmd.back() != '\n') {
             cmd.push_back('\n');
@@ -19,8 +18,6 @@ IntanRHS2116::IntanRHS2116(ofSerial& serial)
 : serial_(serial) {}
 
 // ====== Private: sendCommand ===============================================
-// IMPORTANT: This version uses ofSerial::writeData(...) (not writeBytes),
-// which exists in your ofSerial implementation.
 bool IntanRHS2116::sendCommand(const std::string& command) {
     if (!serial_.isInitialized()) {
         std::cerr << "[IntanRHS2116] ERROR: ofSerial is not initialized/open.\n";

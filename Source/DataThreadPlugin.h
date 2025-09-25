@@ -1,31 +1,23 @@
 /*
- ------------------------------------------------------------------
-
- This file is part of the Open Ephys GUI
- Copyright (C) 2025 Open Ephys
-
- ------------------------------------------------------------------
-
- This program is free software: you can redistribute it and/or modify
- it under the terms of the GNU General Public License as published by
- the Free Software Foundation, either version 3 of the License, or
- (at your option) any later version.
-
- This program is distributed in the hope that it will be useful,
- but WITHOUT ANY WARRANTY; without even the implied warranty of
- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- GNU General Public License for more details.
-
- You should have received a copy of the GNU General Public License
- along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
+ * Project : BRAIN PLUS
+ * File    : DataThreadPlugin.h
+ * Author  : Clerici Lorenzo (ISEA)
+ * Created : 2025-09-19
+ * Purpose : Data acquisition plugin for Intan RHS2116 over a serial interface.
+ *
+ * Data-acquisition plugin for the Intan RHS2116 over a serial link.
+ * Responsibilities:
+ *   - Configure device (rate, bandwidth, DSP) and manage start/stop.
+ *   - Serial I/O thread: sync on 0xAA, read fixed-size frames, enqueue.
+ *   - Packet pool queue for lock-efficient producer/consumer flow.
+ *   - Parse/de-interleave samples, convert to µV, publish to DataBuffer.
+ *   - Expose Open Ephys/JUCE DataThread interface and editor stub.
  */
 
 #ifndef DATATHREADPLUGIN_H_DEFINED
 #define DATATHREADPLUGIN_H_DEFINED
 
 #include <DataThreadHeaders.h>
-
 #include <array>
 #include <vector>
 #include <thread>
@@ -35,11 +27,10 @@
 #include <atomic>
 #include <chrono>
 #include <string>
-
 #include "ofSerial.h"
 #include "IntanRHS2116.h"
 
-class ofSerial; // forward decl to keep this header light
+class ofSerial;
 
 class DataThreadPlugin : public DataThread
 {
@@ -127,7 +118,7 @@ private:
     };
 
     // ===================== Threads =====================
-    void serialLoop();                // very simple I/O thread: frame on 0xAA and enqueue 8004B raw
+    void serialLoop();                // I/O thread: frame on 0xAA and enqueue 8004B raw
     std::thread serialThread_;
     std::atomic_bool serialRunning_{false};
 

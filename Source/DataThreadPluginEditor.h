@@ -1,24 +1,17 @@
 /*
- ------------------------------------------------------------------
-
- This file is part of the Open Ephys GUI
- Copyright (C) 2022 Open Ephys
-
- ------------------------------------------------------------------
-
- This program is free software: you can redistribute it and/or modify
- it under the terms of the GNU General Public License as published by
- the Free Software Foundation, either version 3 of the License, or
- (at your option) any later version.
-
- This program is distributed in the hope that it will be useful,
- but WITHOUT ANY WARRANTY; without even the implied warranty of
- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- GNU General Public License for more details.
-
- You should have received a copy of the GNU General Public License
- along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
+ * Project : BRAIN PLUS
+ * File    : DataThreadPluginEditor.h
+ * Author  : Clerici Lorenzo (ISEA)
+ * Created : 2025-09-19
+ * Purpose : Data acquisition plugin for Intan RHS2116 over a serial interface.
+ *
+ * Data-acquisition plugin for the Intan RHS2116 over a serial link.
+ * Responsibilities:
+ *   - Configure device (rate, bandwidth, DSP) and manage start/stop.
+ *   - Serial I/O thread: sync on 0xAA, read fixed-size frames, enqueue.
+ *   - Packet pool queue for lock-efficient producer/consumer flow.
+ *   - Parse/de-interleave samples, convert to µV, publish to DataBuffer.
+ *   - Expose Open Ephys/JUCE DataThread interface and editor stub.
  */
 
 #ifndef DATATHREADPLUGINEDITOR_H_DEFINED
@@ -116,10 +109,19 @@ private:
     juce::Label   dspFreqLabel;
     juce::ComboBox dspFreqBox;
 
+    // --- Preset folder UI ---
+    juce::Label     presetFolderLabel;
+    juce::TextButton presetFolderBox;  
+    juce::File      presetBaseDir;    
+    
+    
+    // --- Preset import helpers ---
+    bool loadPresetFile (const juce::File& f);
+    bool applyPresetObject (const juce::var& root);
+    bool loadSequenceFirst (const juce::File& baseDir);
+
     // Rebuilds the DSP frequency dropdown according to the current sample rate
     void rebuildDspFreqItems (int fsample);
-
-
 };
 
 
