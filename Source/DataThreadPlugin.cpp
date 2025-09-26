@@ -25,6 +25,22 @@
 #include <thread>
 #include <chrono>
 
+#include <CoreServicesHeader.h>
+#include "DataThreadPluginEditor.h"
+#include <iostream>
+#include <cstdio>
+#include <EditorHeaders.h>
+#include "DataThreadPlugin.h"
+#include "ofSerial.h" 
+#include <BasicJuceHeader.h> 
+
+#include <filesystem>
+namespace fs = std::filesystem;
+static juce::File gBaseDir;
+static juce::File gSeqFile;
+static juce::var  gSeq; // array of preset filenames
+static int        gSeqCount = 0;
+
 // =================================================== PacketPoolQueue impl =====================================================
 DataThreadPlugin::PacketPoolQueue::PacketPoolQueue(int n)
 : storage_(static_cast<size_t>(n))
@@ -357,7 +373,6 @@ bool DataThreadPlugin::setSerialPort(const std::string& name)
 
 bool DataThreadPlugin::setSampleRate(int hz)
 {
-    // Store-only; device will be configured on startAcquisition().
     if (hz <= 0) return false;
     sampleRateHz_ = hz;
     return true;
@@ -389,11 +404,110 @@ bool DataThreadPlugin::setDspKFactor(int k)
     dspK_ = k;
     return true;
 }
+
+bool DataThreadPlugin::setAcquisitionTimeSeconds(int seconds)
+{
+    if (seconds < 0) return false;
+    acquisitionTimeSec_ = seconds;
+    return true;
+}
+
+bool DataThreadPlugin::setPresetFolderPath(const std::string& path)
+{
+    if (!path.empty() && !fs::is_directory(fs::u8path(path)))
+        return false;
+
+    presetFolderPath_ = path;
+    return true;
+}
+
+bool DataThreadPlugin::startSequence()
+{
+    if (!prepareSequenceHeader())  return false;   // folder + sequence.json + parse + count
+    if (!loadAndApplyPreset(1))    return false;   // load + validate + apply preset #0
+
+    //CoreServices::setAcquisitionStatus(true);
+    CoreServices::setRecordingStatus(true);
+    return true;
+}
+
+
+bool DataThreadPlugin::stopSequence()
+{
+    CoreServices::setAcquisitionStatus(false);
+    return true;
+}
 // ==============================================================================================================================
 
 
 
 
+// ================================================== Preset management =========================================================
+
+// Validate preset folder, locate & parse sequence.json, cache results in globals.
+bool DataThreadPlugin::prepareSequenceHeader()
+{
+    if (presetFolderPath_.empty() || !fs::is_directory(fs::u8path(presetFolderPath_))) {
+        std::printf("[STM32-RHS2116] Preset folder not set or invalid\n"); return false;
+    }
+
+    // Locate sequence.json
+    gBaseDir = juce::File{ juce::String(presetFolderPath_) };
+    gSeqFile = gBaseDir.getChildFile("sequence.json");
+    if (!gSeqFile.existsAsFile()) {
+        std::printf("[STM32-RHS2116] sequence.json not found in %s\n", gBaseDir.getFullPathName().toRawUTF8());
+        return false;
+    }
+
+    // Parse the sequence.json file
+    gSeq = juce::var(); auto ok = juce::JSON::parse(gSeqFile.loadFileAsString(), gSeq);
+    if (!ok.wasOk() || !gSeq.isArray()) { std::printf("[STM32-RHS2116] Invalid sequence.json\n"); return false; }
+
+    // Count presets
+    gSeqCount = gSeq.getArray()->size();
+    std::printf("[STM32-RHS2116] sequence.json: %d presets found\n", gSeqCount);
+    if (gSeqCount <= 0) return false;
+
+    return true;
+}
+
+// ------------------------------- loadAndApplyPreset(index) --------------------------------
+// Load preset by index from globals and apply to the editor.
+bool DataThreadPlugin::loadAndApplyPreset(int index)
+{
+    // Basic bounds/structure checks
+    if (!gSeq.isArray()) { std::printf("[STM32-RHS2116] Sequence not parsed\n"); return false; }
+    if (index < 0 || index >= gSeqCount) {
+        std::printf("[STM32-RHS2116] Preset index out of range (%d of %d)\n", index, gSeqCount);
+        return false;
+    }
+
+    // Get preset filename
+    const juce::var& entry = gSeq.getArray()->getReference(index);
+    if (!entry.isString()) { std::printf("[STM32-RHS2116] Preset entry is not a string\n"); return false; }
+
+    juce::File preset = gBaseDir.getChildFile(entry.toString());
+    if (!preset.existsAsFile()) {
+        std::printf("[STM32-RHS2116] Preset file not found: %s\n", preset.getFullPathName().toRawUTF8());
+        return false;
+    }
+
+    // Parse preset JSON
+    juce::var root;
+    if (!juce::JSON::parse(preset.loadFileAsString(), root).wasOk() || !root.isObject()) {
+        std::printf("[STM32-RHS2116] Invalid preset JSON: %s\n", preset.getFileName().toRawUTF8());
+        return false;
+    }
+
+    // Log which preset is being applied
+    std::printf("\n\n\n[STM32-RHS2116] ============== Applying preset #%d: %s ==============\n\n", index, preset.getFileName().toRawUTF8());
+
+    if (!editor_) { std::printf("[STM32-RHS2116] Editor not attached\n"); return false; }
+    if (!editor_->applyPresetObject(root)) return false;
+
+    return true;
+}
+// ==============================================================================================================================
 
 
 
@@ -403,7 +517,8 @@ void DataThreadPlugin::resizeBuffers() { /* no-op */ }
 
 std::unique_ptr<GenericEditor> DataThreadPlugin::createEditor (SourceNode* sn)
 {
-    std::unique_ptr<DataThreadPluginEditor> editor = std::make_unique<DataThreadPluginEditor> (sn, this);
+    std::unique_ptr<DataThreadPluginEditor> editor = std::make_unique<DataThreadPluginEditor>(sn, this);
+    editor_ = editor.get();
     return editor;
 }
 

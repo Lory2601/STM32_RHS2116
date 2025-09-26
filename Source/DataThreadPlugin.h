@@ -31,6 +31,7 @@
 #include "IntanRHS2116.h"
 
 class ofSerial;
+class DataThreadPluginEditor;
 
 class DataThreadPlugin : public DataThread
 {
@@ -65,6 +66,10 @@ public:
     bool setUpperBandwidthHz(double hz);
     bool setDspEnabled(bool enabled);
     bool setDspKFactor(int k);
+    bool setAcquisitionTimeSeconds(int seconds);
+    bool setPresetFolderPath(const std::string& path);
+    bool startSequence();
+    bool stopSequence();
 
 private:
     // ===================== Hardware / packet layout =========================
@@ -137,7 +142,12 @@ private:
     double lowerBwHz_    = 0.0;
     double upperBwHz_    = 0.0;
     bool   dspEnabled_   = false;
-    int    dspK_         = 0; 
+    int    dspK_         = 0;
+
+    int  acquisitionTimeSec_ = 0;
+    std::string presetFolderPath_;
+    std::atomic_bool sequenceRunning_{false};
+    std::thread sequenceThread_;
 
     // ===================== Helpers: little-endian readers =====================
     static inline uint16 readLE16(const uint8* p) {
@@ -153,6 +163,13 @@ private:
     // ===================== Low-level serial I/O =====================
     ofSerial serial_;
     std::unique_ptr<IntanRHS2116> rhs_;
+
+    // ===================== Editor =====================
+    DataThreadPluginEditor* editor_ = nullptr;
+
+    // --- sequence helpers ---
+    bool prepareSequenceHeader();       // validates folder, loads & parses sequence.json, fills globals
+    bool loadAndApplyPreset(int index); // Loads preset by index from gSeq and applies it via editor_
 };
 
 #endif // DATATHREADPLUGIN_H_DEFINED

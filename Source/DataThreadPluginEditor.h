@@ -68,6 +68,7 @@ public:
     ~DataThreadPluginEditor() override = default;
 
     void resized() override;
+    bool applyPresetObject (const juce::var& root);
 
 private:
     DataThreadPlugin* thread = nullptr;
@@ -114,11 +115,9 @@ private:
     juce::TextButton presetFolderBox;  
     juce::File      presetBaseDir;    
     
-    
-    // --- Preset import helpers ---
-    bool loadPresetFile (const juce::File& f);
-    bool applyPresetObject (const juce::var& root);
-    bool loadSequenceFirst (const juce::File& baseDir);
+    // --- Start sequence ---
+    juce::Label      startSeqLabel;
+    juce::TextButton startSeqButton;
 
     // Rebuilds the DSP frequency dropdown according to the current sample rate
     void rebuildDspFreqItems (int fsample);

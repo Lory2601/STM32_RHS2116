@@ -18,6 +18,7 @@
 #include <iostream>
 #include <cstdio>
 
+
 // ========================================== DataThreadPluginEditor impl ==========================================
 DataThreadPluginEditor::DataThreadPluginEditor (GenericProcessor* parentNode, DataThreadPlugin* plugin)
     : GenericEditor (parentNode), thread(plugin)
@@ -279,20 +280,53 @@ DataThreadPluginEditor::DataThreadPluginEditor (GenericProcessor* parentNode, Da
             presetFolderBox.setButtonText(presetBaseDir.getFileName());
             presetFolderBox.setTooltip(presetBaseDir.getFullPathName());
 
-            // Try to load the first sequence file in the folder
-            loadSequenceFirst(presetBaseDir);
-
             //printf
             std::cout << "[STM32-RHS2116] Selected preset folder: " << presetBaseDir.getFullPathName() << "\n";
 
-            //if (thread != nullptr)
-                //thread->setPresetFolderPath(presetBaseDir.getFullPathName().toStdString());
+            if (thread != nullptr)
+                thread->setPresetFolderPath(presetBaseDir.getFullPathName().toStdString());
+
         }
     };
+    //--------------------------------------------------------------------------------------------------------------
 
-//--------------------------------------------------------------------------------------------------------------
+    // ----------------------------------------------- start sequence -------------------------------------------------
+    startSeqLabel.setText("Start sequence:", juce::dontSendNotification);
+    startSeqLabel.setFont(juce::Font(12.0f));
+    startSeqLabel.setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(startSeqLabel);
 
-    // ---- Sync plugin with GUI defaults (avoid any mismatch at startup) ----
+    startSeqButton.setButtonText("START");
+    startSeqButton.setClickingTogglesState(true);
+
+    // grey when off, green when on
+    startSeqButton.setColour(juce::TextButton::buttonColourId, juce::Colours::lightgrey);
+    startSeqButton.setColour(juce::TextButton::buttonOnColourId, juce::Colours::green);
+    startSeqButton.setColour(juce::TextButton::textColourOffId, juce::Colours::black);
+    startSeqButton.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+
+    addAndMakeVisible(startSeqButton);
+
+    startSeqButton.onClick = [this]()
+    {
+        if (startSeqButton.getToggleState())
+        {
+            if (thread) thread->startSequence();
+            std::printf("[STM32-RHS2116] Sequence started\n");
+        }
+        else
+        {
+            if (thread) thread->stopSequence();
+            std::printf("[STM32-RHS2116] Sequence stopped\n");
+        }
+        std::fflush(stdout);
+    };
+    // ---------------------------------------------------------------------------------------------------------------
+
+
+
+
+    // ------------------------ Sync plugin with GUI defaults (avoid any mismatch at startup) -----------------------
     if (thread != nullptr)
     {
         const int    fs     = sampleRateBox.getText().getIntValue();
@@ -307,174 +341,10 @@ DataThreadPluginEditor::DataThreadPluginEditor (GenericProcessor* parentNode, Da
         thread->setDspEnabled(dspOn);
         thread->setDspKFactor(N_as_K);
     }
+    //--------------------------------------------------------------------------------------------------------------
 
 }
 // =================================================================================================================
-
-
-
-void DataThreadPluginEditor::rebuildDspFreqItems (int fsample)
-{
-    // Rebuild the dropdown with frequencies -> kfreq * fsample.
-    dspFreqBox.clear(juce::dontSendNotification);
-
-    // Simple formatting rule: more decimals for lower frequencies
-    auto fmtHz = [] (double f) -> juce::String
-    {
-        if      (f < 10.0)  return juce::String(f, 3);
-        else if (f < 100.0) return juce::String(f, 2);
-        else                return juce::String(f, 0);
-    };
-
-    for (int N = 1; N <= 15; ++N)
-    {
-        const double k  = DSP_K_TABLE[N];
-        const double fc = k * static_cast<double>(fsample);
-        // Show only the frequency as requested; internally we keep N as the item ID
-        dspFreqBox.addItem(fmtHz(fc), N);
-    }
-}
-
-// ================================ Preset import implementation =================================
-
-// Load and parse a JSON preset file, then apply it.
-bool DataThreadPluginEditor::loadPresetFile (const juce::File& f)
-{
-    if (!f.existsAsFile()) {
-        std::printf("[STM32-RHS2116] Preset file not found: %s\n", f.getFullPathName().toRawUTF8());
-        return false;
-    }
-
-    juce::String content = f.loadFileAsString();
-    juce::var root;
-    if (!juce::JSON::parse(content, root).wasOk() || !root.isObject())
-    {
-        std::printf("[STM32-RHS2116] Invalid preset JSON: %s\n", f.getFileName().toRawUTF8());
-        return false;
-    }
-
-    const bool ok = applyPresetObject(root);
-    if (ok) {
-        std::printf("[STM32-RHS2116] Preset applied: %s\n", f.getFileName().toRawUTF8());
-        std::fflush(stdout);
-    }
-    return ok;
-}
-
-// Apply a parsed JSON object to GUI and backend.
-// Expected keys: samplerate, lowerbandwidth, upperbandwidth, dspenabled, dspn
-bool DataThreadPluginEditor::applyPresetObject (const juce::var& root)
-{
-    auto getNum = [&root](const char* key, double& out)->bool {
-        if (auto* obj = root.getDynamicObject())
-        {
-            juce::var v = obj->getProperty(key);
-            if (v.isDouble() || v.isInt()) { out = static_cast<double>(v); return true; }
-        }
-        return false;
-    };
-    auto getBool = [&root](const char* key, bool& out)->bool {
-        if (auto* obj = root.getDynamicObject())
-        {
-            juce::var v = obj->getProperty(key);
-            if (v.isBool()) { out = static_cast<bool>(v); return true; }
-            if (v.isInt())  { out = (static_cast<int>(v) != 0); return true; }
-        }
-        return false;
-    };
-
-    double fs = 0.0, lbw = 0.0, ubw = 0.0; bool dspEn = false; double dspN_d = 0.0;
-
-    const bool hasFs   = getNum("samplerate",     fs);
-    const bool hasLbw  = getNum("lowerbandwidth", lbw);
-    const bool hasUbw  = getNum("upperbandwidth", ubw);
-    const bool hasDspE = getBool("dspenabled",    dspEn);
-    const bool hasDspN = getNum("dspn",           dspN_d);
-
-    if (!(hasFs && hasLbw && hasUbw)) {
-        std::printf("Preset missing required keys\n");
-        return false;
-    }
-
-    // 1) Sample rate
-    const int fs_i = static_cast<int>(fs);
-    sampleRateBox.setSelectedId(fs_i, juce::dontSendNotification); // id==rate in your setup
-    if (thread) thread->setSampleRate(fs_i);
-
-    // Rebuild DSP freq list because it depends on fs
-    rebuildDspFreqItems(fs_i);
-
-    // 2) Bandwidths
-    auto round2 = [](double v) noexcept { return std::round(v * 100.0) / 100.0; };
-    auto round0 = [](double v) noexcept { return std::round(v); };
-
-    const double lbw2 = round2(lbw);
-    const double ubw0 = round0(ubw);
-
-    // UI: lower with 2 decimals, upper with no decimals
-    lowerBwBox.setText(juce::String(lbw2, 2), juce::dontSendNotification);
-    upperBwBox.setText(juce::String(ubw0, 0), juce::dontSendNotification);
-
-    // Backend: send the rounded values for consistency
-    if (thread)
-    {
-        thread->setLowerBandwidthHz(lbw2);
-        thread->setUpperBandwidthHz(ubw0);
-    }
-
-    // 3) DSP enable
-    if (hasDspE) {
-        dspEnableButton.setToggleState(dspEn, juce::dontSendNotification);
-        if (thread) thread->setDspEnabled(dspEn);
-    }
-
-    // 4) DSP N
-    if (hasDspN) {
-        const int N = juce::jlimit(1, 15, static_cast<int>(dspN_d));
-        dspFreqBox.setSelectedId(N, juce::dontSendNotification);
-        if (thread) thread->setDspKFactor(N);
-        // Optional debug print of computed cutoff
-        const double k  = DSP_K_TABLE[N];
-        const double fc = k * static_cast<double>(fs_i);
-        std::printf("[STM32-RHS2116] DSP cutoff from preset: %.6f Hz (k=%.6g, N=%d)\n", fc, k, N);
-    }
-
-
-    // Force a repaint
-    repaint();
-    return true;
-}
-
-// Load sequence.json
-bool DataThreadPluginEditor::loadSequenceFirst (const juce::File& baseDir)
-{
-    const juce::File seq = baseDir.getChildFile("sequence.json");
-    if (!seq.existsAsFile()) {
-        std::printf("No sequence.json in %s\n", baseDir.getFullPathName().toRawUTF8());
-        return false;
-    }
-
-    juce::String content = seq.loadFileAsString();
-    juce::var root;
-    auto res = juce::JSON::parse(content, root);
-    if (!res.wasOk()) {
-        std::printf("Invalid sequence.json\n");
-        return false;
-    }
-
-    // ["preset1.json", "preset2.json", ...]
-    if (root.isArray() && root.getArray()->size() > 0)
-    {
-        const juce::var& first = root.getArray()->getReference(0);
-        if (first.isString())
-        {
-            const juce::File preset = baseDir.getChildFile(first.toString());
-            return loadPresetFile(preset);
-        }
-    }
-    std::printf("sequence.json has no valid preset entries\n");
-    return false;
-}
 
 
 // ======================================== DataThreadPluginEditor::resized() ======================================
@@ -506,9 +376,139 @@ void DataThreadPluginEditor::resized()
     dspFreqLabel.setBounds(215, 70, 120, 40);
     dspFreqBox.setBounds(340, 80, 80, 20);
 
-    // preset folder (new row)
+    // preset folder
     presetFolderLabel.setBounds(5, 95, 120, 40);
     presetFolderBox.setBounds(125, 105, 80, 20);
 
+    // start sequence
+    startSeqLabel.setBounds(215, 95, 120, 40);
+    startSeqButton.setBounds(340, 105, 80, 20);
+
 }
 // =================================================================================================================
+
+
+
+
+// ==================================Rebuilds the DSP frequency dropdown ==========================================
+void DataThreadPluginEditor::rebuildDspFreqItems (int fsample)
+{
+    // Rebuild the dropdown with frequencies -> kfreq * fsample.
+    dspFreqBox.clear(juce::dontSendNotification);
+
+    auto fmtHz = [] (double f) -> juce::String
+    {
+        if      (f < 10.0)  return juce::String(f, 3);
+        else if (f < 100.0) return juce::String(f, 2);
+        else                return juce::String(f, 0);
+    };
+
+    for (int N = 1; N <= 15; ++N)
+    {
+        const double k  = DSP_K_TABLE[N];
+        const double fc = k * static_cast<double>(fsample);
+        dspFreqBox.addItem(fmtHz(fc), N);
+    }
+}
+// ==================================================================================================================
+
+
+
+
+
+// ========================================= Preset import implementation ===========================================
+
+
+
+// --------------------------- parse the JSON object and apply settings to UI and thread ----------------------------
+bool DataThreadPluginEditor::applyPresetObject (const juce::var& root)
+{
+    // Get double value from JSON
+    auto getNum = [&root](const char* key, double& out)->bool {
+        if (auto* obj = root.getDynamicObject())
+        {
+            juce::var v = obj->getProperty(key);
+            if (v.isDouble() || v.isInt()) { out = static_cast<double>(v); return true; }
+        }
+        return false;
+    };
+
+    // Get boolean value from JSON
+    auto getBool = [&root](const char* key, bool& out)->bool {
+        if (auto* obj = root.getDynamicObject())
+        {
+            juce::var v = obj->getProperty(key);
+            if (v.isBool()) { out = static_cast<bool>(v); return true; }
+            if (v.isInt())  { out = (static_cast<int>(v) != 0); return true; }
+        }
+        return false;
+    };
+
+    // Get integer value from JSON
+    auto getInt = [&root](const char* key, int& out)->bool {
+        if (auto* obj = root.getDynamicObject())
+        {
+            juce::var v = obj->getProperty(key);
+            if (v.isInt()) { out = static_cast<int>(v); return true; }
+        }
+        return false;
+    };
+
+    double fs = 0.0, lbw = 0.0, ubw = 0.0; bool dspEn = false; double dspN_d = 0.0;
+    int acquisitionTimeSec = 0;
+
+    const bool hasFs   = getNum("samplerate",     fs);
+    const bool hasLbw  = getNum("lowerbandwidth", lbw);
+    const bool hasUbw  = getNum("upperbandwidth", ubw);
+    const bool hasDspE = getBool("dspenabled",    dspEn);
+    const bool hasDspN = getNum("dspn",           dspN_d);
+    const bool hasAcqT = getInt("acquisitiontime", acquisitionTimeSec);
+
+    if (!(hasFs && hasLbw && hasUbw && hasDspE && hasDspN && hasAcqT)) {
+        std::printf("[STM32-RHS2116] Preset missing required keys\n");
+        return false;
+    }
+
+    // 1) Sample rate
+    const int fs_i = static_cast<int>(fs);
+    sampleRateBox.setSelectedId(fs_i, juce::dontSendNotification);
+    if (thread) thread->setSampleRate(fs_i);
+    rebuildDspFreqItems(fs_i);
+
+    // 2) Bandwidths
+    auto round2 = [](double v) noexcept { return std::round(v * 100.0) / 100.0; };
+    auto round0 = [](double v) noexcept { return std::round(v); };
+    const double lbw2 = round2(lbw);
+    const double ubw0 = round0(ubw);
+    lowerBwBox.setText(juce::String(lbw2, 2), juce::dontSendNotification);
+    upperBwBox.setText(juce::String(ubw0, 0), juce::dontSendNotification);
+    if (thread)
+    {
+        thread->setLowerBandwidthHz(lbw2);
+        thread->setUpperBandwidthHz(ubw0);
+    }
+
+    // 3) DSP enable
+    dspEnableButton.setToggleState(dspEn, juce::dontSendNotification);
+    if (thread) thread->setDspEnabled(dspEn);
+
+
+    // 4) DSP N
+    const int N = juce::jlimit(1, 15, static_cast<int>(dspN_d));
+    dspFreqBox.setSelectedId(N, juce::dontSendNotification);
+    if (thread) thread->setDspKFactor(N);
+    const double k  = DSP_K_TABLE[N];
+    const double fc = k * static_cast<double>(fs_i);
+    std::printf("[STM32-RHS2116] DSP cutoff from preset: %.6f Hz (k=%.6g, N=%d)\n", fc, k, N);
+
+    // 5) Acquisition time
+    if (thread) thread->setAcquisitionTimeSeconds(acquisitionTimeSec);
+    std::printf("[STM32-RHS2116] Acquisition time from preset: %d seconds\n", acquisitionTimeSec);
+
+    // Force a repaint
+    repaint();
+    return true;
+}
+//-------------------------------------------------------------------------------------------------------------------
+
+// ==================================================================================================================
