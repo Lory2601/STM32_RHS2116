@@ -70,6 +70,9 @@ public:
     void resized() override;
     bool applyPresetObject (const juce::var& root);
 
+    // Toggle the start/stop button state
+    void setStartToggle (bool on);
+
 private:
     DataThreadPlugin* thread = nullptr;
     struct RefreshingComboBox : public juce::ComboBox

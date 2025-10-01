@@ -170,6 +170,7 @@ private:
     // --- sequence helpers ---
     bool prepareSequenceHeader();       // validates folder, loads & parses sequence.json, fills globals
     bool loadAndApplyPreset(int index); // Loads preset by index from gSeq and applies it via editor_
+    void presetSequenceThread();
 };
 
 #endif // DATATHREADPLUGIN_H_DEFINED

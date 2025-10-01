@@ -108,6 +108,8 @@ DataThreadPlugin::~DataThreadPlugin()
 {
     serialRunning_.store(false);
     if (serialThread_.joinable()) serialThread_.join();
+    sequenceRunning_.store(false);
+    if (sequenceThread_.joinable()) sequenceThread_.join();
 }
 
 bool DataThreadPlugin::foundInputSource()
@@ -423,20 +425,58 @@ bool DataThreadPlugin::setPresetFolderPath(const std::string& path)
 
 bool DataThreadPlugin::startSequence()
 {
-    if (!prepareSequenceHeader())  return false;   // folder + sequence.json + parse + count
-    if (!loadAndApplyPreset(1))    return false;   // load + validate + apply preset #0
-
-    //CoreServices::setAcquisitionStatus(true);
-    CoreServices::setRecordingStatus(true);
+    if (sequenceRunning_.exchange(true)) return false;         // already running
+    if (!prepareSequenceHeader()) { sequenceRunning_.store(false); return false; }
+    sequenceThread_ = std::thread(&DataThreadPlugin::presetSequenceThread, this);
     return true;
+}
+
+void DataThreadPlugin::presetSequenceThread()
+{
+    using clock = std::chrono::steady_clock;
+
+    for (int i = 0; i < gSeqCount && sequenceRunning_.load(); ++i)
+    {
+        if (!loadAndApplyPreset(i)) continue;                  
+        CoreServices::setRecordingStatus(true);                // start acquisition+recording
+
+        const int secs = acquisitionTimeSec_;
+        if (secs > 0) {
+            const auto t0 = clock::now();
+            int printed = 0;
+            while (sequenceRunning_.load()) {
+                const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(clock::now() - t0).count();
+                if (elapsed >= secs) break;
+                if (elapsed > printed) {
+                    printed = static_cast<int>(elapsed);
+                    std::printf("[STM32-RHS2116] preset %d: %d/%d s\n", i+1, printed, secs);
+                    std::fflush(stdout);
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
+        }
+
+
+        CoreServices::setAcquisitionStatus(false);               // stop acquisition+recording
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000)); // let OE settle
+    }
+    // Sequence finished or stopped
+    if (editor_)    
+        editor_->setStartToggle(false);
+    sequenceRunning_.store(false);
 }
 
 
 bool DataThreadPlugin::stopSequence()
 {
+    sequenceRunning_.store(false);
+    if (sequenceThread_.joinable()) sequenceThread_.join();
     CoreServices::setAcquisitionStatus(false);
     return true;
 }
+
+
+
 // ==============================================================================================================================
 
 
@@ -500,7 +540,7 @@ bool DataThreadPlugin::loadAndApplyPreset(int index)
     }
 
     // Log which preset is being applied
-    std::printf("\n\n\n[STM32-RHS2116] ============== Applying preset #%d: %s ==============\n\n", index, preset.getFileName().toRawUTF8());
+    std::printf("\n\n\n[STM32-RHS2116] ============== Applying preset #%d: %s ==============\n\n", index+1, preset.getFileName().toRawUTF8());
 
     if (!editor_) { std::printf("[STM32-RHS2116] Editor not attached\n"); return false; }
     if (!editor_->applyPresetObject(root)) return false;

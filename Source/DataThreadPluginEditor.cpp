@@ -512,3 +512,14 @@ bool DataThreadPluginEditor::applyPresetObject (const juce::var& root)
 //-------------------------------------------------------------------------------------------------------------------
 
 // ==================================================================================================================
+
+
+
+
+
+// ================================ Toggle the start/stop button state (used by the thread) ==========================
+void DataThreadPluginEditor::setStartToggle (bool on)
+{
+    startSeqButton.setToggleState(on, juce::dontSendNotification); // UI only
+}
+// ==================================================================================================================
