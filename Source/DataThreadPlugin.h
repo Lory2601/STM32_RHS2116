@@ -81,25 +81,10 @@ private:
     static constexpr int    BLOCK_BYTES     = TIMESTAMP_BYTES + PAYLOAD_BYTES; // 8004 (no sync)
     static constexpr uint8  SYNC_BYTE       = 0xAA;     // start-of-packet marker
     static constexpr double TS_TICK_US      = 100.0;    // device timestamp resolution (100 us)
-
-    static constexpr int NUM_CH = 16; // channels exposed to the GUI
-
-    // 0-based indices of the 16 channels to forward
-    static constexpr std::array<int, NUM_CH> CH_MAP = {
-        5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33, 35
-    };
-
     static constexpr int MAX_DRAIN_PER_CALL = 8; // parse/push up to N raw blocks per updateBuffer()
     static constexpr int N_BLOCKS = 256;         // pool size for raw blocks
 
     // ===================== Producer–consumer data structures =================
-    /**
-     * @brief Raw device block as read by the I/O thread, without the 0xAA sync byte.
-     * bytes[0..3]   : u32 LE timestamp (first sample)
-     * bytes[4..]    : 100 × 40 × int16 LE payload
-     *
-     * NOTE: The I/O thread does not parse; it only copies into this buffer.
-     */
     struct RawBlock {
         std::array<uint8, BLOCK_BYTES> bytes{};
     };
@@ -130,8 +115,32 @@ private:
     std::unique_ptr<PacketPoolQueue> queue_;
 
     // ===================== Open Ephys integration =====================
-    DataBuffer* dataBuffer_ = nullptr;
-    DataStream* stream_     = nullptr;
+    DataBuffer* dataBufferAC_  = nullptr;
+    DataBuffer* dataBufferDC_  = nullptr;
+    DataStream* streamAC_      = nullptr;
+    DataStream* streamDC_      = nullptr;
+
+    // AC scale: we push microvolts (already in code)
+    static constexpr float AC_UV_PER_LSB = 0.195f; // uV
+
+    // DC (10-bit) scale: we push millivolts
+    static constexpr int   DC_CENTER_10B = 512;
+    static constexpr uint16 DC_MASK_10B  = 0x03FF;
+    static constexpr float DC_MV_PER_LSB = -19.23f;
+    
+    // ===================== Channel mapping =====================
+    static constexpr int NUM_CH = 16;
+
+    // 16-bit AC channel indices
+    static constexpr std::array<int, NUM_CH> CH_MAP = {
+        5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33, 35
+    };
+
+    // 10-bit DC channel indices
+    static constexpr std::array<int, NUM_CH> DC10_MAP = {
+        4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34
+    };
+
 
     int64 totalSamples_ = 0;          // monotonic sample counter for sampleNumbers[]
 

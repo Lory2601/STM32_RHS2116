@@ -137,42 +137,75 @@ void DataThreadPlugin::updateSettings (OwnedArray<ContinuousChannel>* continuous
     eventChannels->clear();
     sourceStreams->clear();
     sourceBuffers.clear();
+    dataBufferAC_ = nullptr;
+    dataBufferDC_ = nullptr;
+    streamAC_ = nullptr;
+    streamDC_ = nullptr;
 
-    // Create RHS stream
+    // --- AC stream ---
     {
         DataStream::Settings ds {
-            "rhs_stream",
-            "RHS2116 hardware stream (16 channels)",
-            "rhs_stream_id",
+            "rhs_AC_stream",
+            "RHS2116 AC stream (16 ch, uV)",
+            "rhs_ac_stream_id",
             sampleRateHz_
         };
-        stream_ = new DataStream(ds);
-        sourceStreams->add(stream_);
+        streamAC_ = new DataStream(ds);
+        sourceStreams->add(streamAC_);
     }
 
-    // Allocate internal buffer (ample headroom)
+    // --- DC stream ---
+    {
+        DataStream::Settings ds {
+            "rhs_DC_stream",
+            "RHS2116 DC stream (16 ch, mV)",
+            "rhs_dc_stream_id",
+            sampleRateHz_
+        };
+        streamDC_ = new DataStream(ds);
+        sourceStreams->add(streamDC_);
+    }
+
+    // --- allocate 2 internal buffers (capienza ampia) ---
     {
         const int internalCapacity = 30000000; // samples per channel
-        sourceBuffers.add(new DataBuffer(NUM_CH, internalCapacity));
-        dataBuffer_ = sourceBuffers.getLast();
+        sourceBuffers.add(new DataBuffer(NUM_CH, internalCapacity)); // AC
+        dataBufferAC_ = sourceBuffers.getLast();
+        sourceBuffers.add(new DataBuffer(NUM_CH, internalCapacity)); // DC
+        dataBufferDC_ = sourceBuffers.getLast();
     }
 
-    // Register 16 channels (bitVolts = 1.0 since we push microvolts)
+    // --- 16 canali AC in microvolt ---
     for (int ch = 0; ch < NUM_CH; ++ch)
     {
         ContinuousChannel::Settings cs{
             ContinuousChannel::Type::ELECTRODE,
-            "RHS CH" + String(ch + 1),
+            "RHS AC CH" + String(ch + 1),
             "RHS2116 (uV)",
-            "rhs_ch_" + String(ch + 1),
+            "rhs_ac_ch_" + String(ch + 1),
             1.0,
-            stream_
+            streamAC_
+        };
+        continuousChannels->add(new ContinuousChannel(cs));
+    }
+
+    // --- 16 canali DC in millivolt ---
+    for (int ch = 0; ch < NUM_CH; ++ch)
+    {
+        ContinuousChannel::Settings cs{
+            ContinuousChannel::Type::ELECTRODE,
+            "RHS DC CH" + String(ch + 1),
+            "RHS2116 (mV)",
+            "rhs_dc_ch_" + String(ch + 1),
+            1.0,
+            streamDC_
         };
         continuousChannels->add(new ContinuousChannel(cs));
     }
 
     totalSamples_ = 0;
     if (queue_) queue_->reset();
+
 }
 // ==============================================================================================================================
 
@@ -228,24 +261,25 @@ bool DataThreadPlugin::startAcquisition()
 bool DataThreadPlugin::updateBuffer()
 {
     // Parse raw packets and push to DataBuffer. No I/O here.
-    if (dataBuffer_ == nullptr || stream_ == nullptr) return false;
+    if (dataBufferAC_ == nullptr || dataBufferDC_ == nullptr || streamAC_ == nullptr || streamDC_ == nullptr)
+        return false;
 
-    int drained = 0;
-    int idx = -1;
+    int drained = 0, idx = -1;
 
-    // Scratch buffers for a single device packet (100 samples, 16 channels)
-    std::array<float,  NUM_CH * BLOCK_NSAMP> samples{};
+    // scratch per un blocco (100 sample, 16 canali)
+    std::array<float,  NUM_CH * BLOCK_NSAMP> samplesAC{};
+    std::array<float,  NUM_CH * BLOCK_NSAMP> samplesDC{};
     std::array<int64,  BLOCK_NSAMP>          sampleNumbers{};
     std::array<double, BLOCK_NSAMP>          timestamps{};
-    std::array<uint64, BLOCK_NSAMP>          eventCodes{}; // zeros
+    std::array<uint64, BLOCK_NSAMP>          eventCodes{}; // 0
 
     while (drained < MAX_DRAIN_PER_CALL && queue_->tryPopReady(idx))
     {
         auto& raw = queue_->at(idx);
 
-        // 1) Timestamp (u32 LE), device tick = 100 us
+        // timestamp base (ticks da 100 us)
         const uint32 ticks  = readLE32(raw.bytes.data());
-        const double ts0_s  = (ticks * TS_TICK_US) * 1e-6;  // seconds
+        const double ts0_s  = (ticks * TS_TICK_US) * 1e-6;
         const double dt_s   = 1.0 / sampleRateHz_;
 
         for (int i = 0; i < BLOCK_NSAMP; ++i) {
@@ -255,31 +289,39 @@ bool DataThreadPlugin::updateBuffer()
             eventCodes[static_cast<size_t>(i)]    = 0;
         }
 
-        // 2) De-interleave 40ch x int16 LE -> pick 16 channels -> convert to uV
+        // payload
         const uint8* payload = raw.bytes.data() + TIMESTAMP_BYTES;
         constexpr int BYTES_PER_SAMPLE = TOTAL_HW_CH * 2;
 
-        for (int i = 0; i < BLOCK_NSAMP; ++i) {
+        for (int i = 0; i < BLOCK_NSAMP; ++i)
+        {
             const int sampleOffset = i * BYTES_PER_SAMPLE;
+
+            // --- AC (16-bit, uV) ---
             for (int outCh = 0; outCh < NUM_CH; ++outCh) {
                 const int hwCh      = CH_MAP[static_cast<size_t>(outCh)];
                 const int byteIndex = sampleOffset + (hwCh * 2);
                 const uint16 adc    = readLE16(payload + byteIndex);
+                const int centered  = static_cast<int>(adc) - 32768;
+                const float uV      = AC_UV_PER_LSB * static_cast<float>(centered);
+                samplesAC[static_cast<size_t>(outCh) * BLOCK_NSAMP + static_cast<size_t>(i)] = uV;
+            }
 
-                // Velec(AC) = 0.195 µV × (ADC – 32768)
-                const int   centered = static_cast<int>(adc) - 32768;
-                const float uV       = 0.195f * static_cast<float>(centered);
-
-                samples[static_cast<size_t>(outCh) * BLOCK_NSAMP + static_cast<size_t>(i)] = uV;
+            // --- DC (10-bit, mV) ---
+            for (int outCh = 0; outCh < NUM_CH; ++outCh) {
+                const int hwCh      = DC10_MAP[static_cast<size_t>(outCh)];
+                const int byteIndex = sampleOffset + (hwCh * 2);
+                const uint16 raw16  = readLE16(payload + byteIndex);
+                const int adc10     = static_cast<int>(raw16 & DC_MASK_10B);
+                const int centered  = adc10 - DC_CENTER_10B;
+                const float mV      = DC_MV_PER_LSB * static_cast<float>(centered);
+                samplesDC[static_cast<size_t>(outCh) * BLOCK_NSAMP + static_cast<size_t>(i)] = mV;
             }
         }
 
-        // 3) Publish to OE
-        dataBuffer_->addToBuffer(samples.data(),
-                                 sampleNumbers.data(),
-                                 timestamps.data(),
-                                 eventCodes.data(),
-                                 BLOCK_NSAMP);
+        // publish
+        dataBufferAC_->addToBuffer(samplesAC.data(), sampleNumbers.data(), timestamps.data(), eventCodes.data(), BLOCK_NSAMP);
+        dataBufferDC_->addToBuffer(samplesDC.data(), sampleNumbers.data(), timestamps.data(), eventCodes.data(), BLOCK_NSAMP);
 
         totalSamples_ += BLOCK_NSAMP;
         queue_->releaseFree(idx);
@@ -287,6 +329,7 @@ bool DataThreadPlugin::updateBuffer()
     }
 
     return true;
+
 }
 // ==============================================================================================================================
 
@@ -313,9 +356,11 @@ bool DataThreadPlugin::stopAcquisition()
         signalThreadShouldExit();
     waitForThreadToExit(500);
 
-    if (dataBuffer_ != nullptr)
-        dataBuffer_->clear();
+    if (dataBufferAC_ != nullptr)
+        dataBufferAC_->clear();
 
+    if (dataBufferDC_ != nullptr)
+        dataBufferDC_->clear();
     return true;
 }
 // ==============================================================================================================================
@@ -427,6 +472,7 @@ bool DataThreadPlugin::startSequence()
 {
     if (sequenceRunning_.exchange(true)) return false;         // already running
     if (!prepareSequenceHeader()) { sequenceRunning_.store(false); return false; }
+    std::this_thread::sleep_for(std::chrono::seconds(1));
     sequenceThread_ = std::thread(&DataThreadPlugin::presetSequenceThread, this);
     return true;
 }
@@ -458,7 +504,8 @@ void DataThreadPlugin::presetSequenceThread()
 
 
         CoreServices::setAcquisitionStatus(false);               // stop acquisition+recording
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000)); // let OE settle
+        std::this_thread::sleep_for(std::chrono::seconds(5));   // let OE settle
+        
     }
     // Sequence finished or stopped
     if (editor_)    
