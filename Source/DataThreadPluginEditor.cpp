@@ -418,9 +418,6 @@ void DataThreadPluginEditor::rebuildDspFreqItems (int fsample)
 
 // ========================================= Preset import implementation ===========================================
 
-
-
-// --------------------------- parse the JSON object and apply settings to UI and thread ----------------------------
 bool DataThreadPluginEditor::applyPresetObject (const juce::var& root)
 {
     // Get double value from JSON
@@ -454,17 +451,76 @@ bool DataThreadPluginEditor::applyPresetObject (const juce::var& root)
         return false;
     };
 
-    double fs = 0.0, lbw = 0.0, ubw = 0.0; bool dspEn = false; double dspN_d = 0.0;
+    // Get array<array<int,3>> from JSON
+    auto getStimSeq = [&root](std::vector<DataThreadPlugin::StimCmd>& out)->bool {
+        if (auto* obj = root.getDynamicObject()) {
+            juce::var v = obj->getProperty("stim_sequence");
+            if (! v.isArray()) return false;
+            auto* arr = v.getArray();
+            out.clear();
+            for (auto& row : *arr)
+            {
+                if (!row.isArray() || row.getArray()->size() < 3) continue;
+                auto& a = *row.getArray();
+                DataThreadPlugin::StimCmd c;
+                c.mode = (int)a[0]; c.ch1 = (int)a[1]; c.ch2 = (int)a[2];
+                out.push_back(c);
+            }
+            return true;
+        }
+        return false;
+    };
+
+
+    // --- acquisition
+    double fs = 0.0, lbw = 0.0, ubw = 0.0; 
+    bool dspEn = false; 
+    double dspN_d = 0.0;
     int acquisitionTimeSec = 0;
 
-    const bool hasFs   = getNum("samplerate",     fs);
-    const bool hasLbw  = getNum("lowerbandwidth", lbw);
-    const bool hasUbw  = getNum("upperbandwidth", ubw);
-    const bool hasDspE = getBool("dspenabled",    dspEn);
-    const bool hasDspN = getNum("dspn",           dspN_d);
-    const bool hasAcqT = getInt("acquisitiontime", acquisitionTimeSec);
+    // --- stimulation
+    int stim_enable      = 0;
+    double stim_voltage  = 0;
+    int stim_step_na     = 0;
+    int stim_pos_current = 0;
+    int stim_neg_current = 0;
+    int stim_type        = 0;
+    int stim_polarity    = 0;
+    int stim_clk_pos     = 0;
+    int stim_clk_neg     = 0;
+    int stim_continuous  = 0;
+    int cr_enable        = 0;
+    int cr_clk           = 0;
+    int stim_time_ms     = 0;
 
-    if (!(hasFs && hasLbw && hasUbw && hasDspE && hasDspN && hasAcqT)) {
+    const bool hasFs            = getNum("samplerate",     fs);
+    const bool hasLbw           = getNum("lowerbandwidth", lbw);
+    const bool hasUbw           = getNum("upperbandwidth", ubw);
+    const bool hasDspE          = getBool("dspenabled",    dspEn);
+    const bool hasDspN          = getNum("dspn",           dspN_d);
+    const bool hasAcqT          = getInt("acquisitiontime", acquisitionTimeSec);
+    const bool hasStimE         = getInt("stim_enable",       stim_enable);
+    const bool hasStimV         = getNum("stim_voltage",      stim_voltage);
+    const bool hasStimStep      = getInt("stim_step_size_na", stim_step_na);
+    const bool hasStimPos       = getInt("stim_pos_current",  stim_pos_current);
+    const bool hasStimNeg       = getInt("stim_neg_current",  stim_neg_current);
+    const bool hasStimType      = getInt("stim_type",         stim_type);
+    const bool hasStimPol       = getInt("stim_polarity",     stim_polarity);
+    const bool hasStimClkPos    = getInt("stim_clk_pos",      stim_clk_pos);
+    const bool hasStimClkNeg    = getInt("stim_clk_neg",      stim_clk_neg);
+    const bool hasStimCont      = getInt("stim_continuous",   stim_continuous);
+    const bool hasCrEnable      = getInt("cr_enable",         cr_enable);
+    const bool hasCrClk         = getInt("cr_clk",            cr_clk);
+    const bool hasStimTime      = getInt("stimulation_time_ms", stim_time_ms);
+
+    // sequence
+    std::vector<DataThreadPlugin::StimCmd> seq;
+    getStimSeq(seq);
+
+    if (!(hasFs && hasLbw && hasUbw && hasDspE && hasDspN && hasAcqT && hasStimE 
+            && hasStimV && hasStimStep && hasStimPos && hasStimNeg && hasStimType 
+            && hasStimPol && hasStimClkPos && hasStimClkNeg && hasStimCont && hasCrEnable 
+            && hasCrClk && hasStimTime)) {
         std::printf("[STM32-RHS2116] Preset missing required keys\n");
         return false;
     }
@@ -472,7 +528,6 @@ bool DataThreadPluginEditor::applyPresetObject (const juce::var& root)
     // 1) Sample rate
     const int fs_i = static_cast<int>(fs);
     sampleRateBox.setSelectedId(fs_i, juce::dontSendNotification);
-    if (thread) thread->setSampleRate(fs_i);
     rebuildDspFreqItems(fs_i);
 
     // 2) Bandwidths
@@ -482,34 +537,77 @@ bool DataThreadPluginEditor::applyPresetObject (const juce::var& root)
     const double ubw0 = round0(ubw);
     lowerBwBox.setText(juce::String(lbw2, 2), juce::dontSendNotification);
     upperBwBox.setText(juce::String(ubw0, 0), juce::dontSendNotification);
-    if (thread)
-    {
-        thread->setLowerBandwidthHz(lbw2);
-        thread->setUpperBandwidthHz(ubw0);
-    }
+
 
     // 3) DSP enable
     dspEnableButton.setToggleState(dspEn, juce::dontSendNotification);
-    if (thread) thread->setDspEnabled(dspEn);
 
 
     // 4) DSP N
     const int N = juce::jlimit(1, 15, static_cast<int>(dspN_d));
     dspFreqBox.setSelectedId(N, juce::dontSendNotification);
-    if (thread) thread->setDspKFactor(N);
     const double k  = DSP_K_TABLE[N];
     const double fc = k * static_cast<double>(fs_i);
     std::printf("[STM32-RHS2116] DSP cutoff from preset: %.6f Hz (k=%.6g, N=%d)\n", fc, k, N);
 
     // 5) Acquisition time
-    if (thread) thread->setAcquisitionTimeSeconds(acquisitionTimeSec);
     std::printf("[STM32-RHS2116] Acquisition time from preset: %d seconds\n", acquisitionTimeSec);
+
+    // Validate stimulation current step size (in nA)
+    {
+        static const int kAllowedSteps[] = { 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000 };
+        bool ok = false;
+        for (int v : kAllowedSteps) { if (stim_step_na == v) { ok = true; break; } }
+        if (!ok) {
+            std::printf("[STM32-RHS2116] Invalid stim_step_size_na: %d (allowed: 10 20 50 100 200 500 1000 2000 5000 10000)\n",
+                        stim_step_na);
+            return false;
+        }
+    }
+
+    // Selected stimulation currents: step (nA) * multiplier (1..255)
+    const int posCurrentNa = stim_step_na * stim_pos_current;
+    const int negCurrentNa = stim_step_na * stim_neg_current;
+    std::printf("[STM32-RHS2116] Positive current: %d nA (step=%d nA * mult=%d)\n",
+                posCurrentNa, stim_step_na, stim_pos_current);
+    std::printf("[STM32-RHS2116] Negative current: %d nA (step=%d nA * mult=%d)\n",
+                negCurrentNa, stim_step_na, stim_neg_current);
+
+
+
+    // push to thread
+    if (thread)
+    {
+        // acquisition
+        thread->setSampleRate(fs_i);
+        thread->setLowerBandwidthHz(lbw2);
+        thread->setUpperBandwidthHz(ubw0);
+        thread->setDspEnabled(dspEn);
+        thread->setDspKFactor(N);
+        thread->setAcquisitionTimeSeconds(acquisitionTimeSec);
+        
+        // stimulation
+        thread->setStimEnabled(stim_enable != 0);
+        thread->setStimVoltage(stim_voltage);
+        thread->setStimStepNa(stim_step_na);
+        thread->setStimPosCurrent(stim_pos_current);
+        thread->setStimNegCurrent(stim_neg_current);
+        thread->setStimType(stim_type);
+        thread->setStimPolarity(stim_polarity);
+        thread->setStimClkPos(stim_clk_pos);
+        thread->setStimClkNeg(stim_clk_neg);
+        thread->setStimContinuous(stim_continuous);
+        thread->setChargeRecoveryEnable(cr_enable);
+        thread->setChargeRecoveryClk(cr_clk);
+        thread->setStimulationTimeMs(stim_time_ms);
+        if (!seq.empty()) 
+            thread->setStimSequence(seq);
+    }    
 
     // Force a repaint
     repaint();
     return true;
 }
-//-------------------------------------------------------------------------------------------------------------------
 
 // ==================================================================================================================
 

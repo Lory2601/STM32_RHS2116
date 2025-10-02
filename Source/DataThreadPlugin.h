@@ -70,6 +70,22 @@ public:
     bool setPresetFolderPath(const std::string& path);
     bool startSequence();
     bool stopSequence();
+    bool setStimEnabled(bool v);
+    bool setStimVoltage(double v);
+    bool setStimStepNa(int v);
+    bool setStimPosCurrent(int v);
+    bool setStimNegCurrent(int v);
+    bool setStimType(int v);
+    bool setStimPolarity(int v);
+    bool setStimClkPos(int v);
+    bool setStimClkNeg(int v);
+    bool setStimContinuous(int v);
+    bool setChargeRecoveryEnable(int v);
+    bool setChargeRecoveryClk(int v);
+    bool setStimulationTimeMs(int v);
+    struct StimCmd { int mode; int ch1; int ch2; };
+    bool setStimSequence(const std::vector<StimCmd>& seq);
+
 
 private:
     // ===================== Hardware / packet layout =========================
@@ -126,7 +142,7 @@ private:
     // DC (10-bit) scale: we push millivolts
     static constexpr int   DC_CENTER_10B = 512;
     static constexpr uint16 DC_MASK_10B  = 0x03FF;
-    static constexpr float DC_MV_PER_LSB = -19.23f;
+    static constexpr float DC_UV_PER_LSB = -19230.0f; 
     
     // ===================== Channel mapping =====================
     static constexpr int NUM_CH = 16;
@@ -152,6 +168,27 @@ private:
     double upperBwHz_    = 0.0;
     bool   dspEnabled_   = false;
     int    dspK_         = 0;
+    // --- Stimulation config ---
+    bool  stimEnabled_     = false;
+    double stimVoltageV_   = 5.0;
+    int    stimStepNa_     = 10;
+    int    stimPosCurrent_ = 128;
+    int    stimNegCurrent_ = 128;
+    int    stimType_       = 0;   // 0/1
+    int    stimPolarity_   = 1;   // 0/1
+    int    stimClkPos_     = 6;
+    int    stimClkNeg_     = 6;
+    int    stimContinuous_ = 0;   // 0/1
+    int    crEnable_       = 0;   // 0/1
+    int    crClk_          = 1;
+
+    int    stimTimeMs_     = 0;   // 0 = off
+
+    
+    static constexpr int kMaxStimSeq = 64;
+    std::vector<StimCmd> stimSeq_;   // bounded to kMaxStimSeq
+    size_t stimSeqIdx_ = 0;
+
 
     int  acquisitionTimeSec_ = 0;
     std::string presetFolderPath_;
@@ -177,8 +214,8 @@ private:
     DataThreadPluginEditor* editor_ = nullptr;
 
     // --- sequence helpers ---
-    bool prepareSequenceHeader();       // validates folder, loads & parses sequence.json, fills globals
-    bool loadAndApplyPreset(int index); // Loads preset by index from gSeq and applies it via editor_
+    bool prepareSequenceHeader();       
+    bool loadAndApplyPreset(int index); 
     void presetSequenceThread();
 };
 

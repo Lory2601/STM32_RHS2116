@@ -27,9 +27,9 @@ public:
     explicit IntanRHS2116(ofSerial& serial);
 
     // Configuration commands
-    void setSampleRate(int sampleRate);
-    void setLowerBandwidth(double lowerBandwidthHz);
-    void setUpperBandwidth(double upperBandwidthHz);
+    void setSampleRate(int sampleRate); //ok
+    void setLowerBandwidth(double lowerBandwidthHz); //ok
+    void setUpperBandwidth(double upperBandwidthHz); //ok
     void configure();
 
     // Acquisition control
@@ -38,22 +38,22 @@ public:
     void reset();
 
     // Stimulation-related commands
-    void stim(int mode, int channel1, int channel2);
-    void setNumberOfClkNeg(int clkNeg);
-    void setNumberOfClkPos(int clkPos);
-    void setStimPolarity(int stimPol);
-    void setStimType(int stimType);
-    void setVoltage(double voltage);
-    void setStepSize(int stepSizeNa);
-    void setNegStimCurrent(int negStimCurrent);
-    void setPosStimCurrent(int posStimCurrent);
-    void setContinuousStim(int mode);
-    void setNumberOfClkCR(int clkCR);
-    void setStateCR(int stateCR);
+    void stim(int mode, int channel1, int channel2); //ok
+    void setNumberOfClkNeg(int clkNeg); //ok
+    void setNumberOfClkPos(int clkPos); //ok
+    void setStimPolarity(int stimPol); //ok
+    void setStimType(int stimType); //ok
+    void setVoltage(double voltage); //ok
+    void setStepSize(int stepSizeNa); //ok
+    void setNegStimCurrent(int negStimCurrent); //ok
+    void setPosStimCurrent(int posStimCurrent); //ok
+    void setContinuousStim(int mode); //ok
+    void setNumberOfClkCR(int clkCR); //ok
+    void setStateCR(int stateCR); //ok
 
     // DSP controls
-    void setDspEnable(bool enable);
-    void setDspFrequency(int kFactor);
+    void setDspEnable(bool enable); //ok
+    void setDspFrequency(int kFactor); //ok
 
 private:
     ofSerial& serial_;

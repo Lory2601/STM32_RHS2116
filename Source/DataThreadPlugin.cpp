@@ -233,6 +233,20 @@ bool DataThreadPlugin::startAcquisition()
     rhs_->setDspEnable(dspEnabled_);
     rhs_->setDspFrequency(dspK_);
 
+    // Stimulation requsted settings
+    rhs_->setVoltage(stimVoltageV_);
+    rhs_->setStepSize(stimStepNa_);
+    rhs_->setPosStimCurrent(stimPosCurrent_);
+    rhs_->setNegStimCurrent(stimNegCurrent_);
+    rhs_->setStimType(stimType_);
+    rhs_->setStimPolarity(stimPolarity_);
+    rhs_->setNumberOfClkPos(stimClkPos_);
+    rhs_->setNumberOfClkNeg(stimClkNeg_);
+    rhs_->setContinuousStim(stimContinuous_);
+    rhs_->setStateCR(crEnable_);
+    rhs_->setNumberOfClkCR(crClk_);
+
+
     // Configure the device
     rhs_->configure();
 
@@ -242,10 +256,12 @@ bool DataThreadPlugin::startAcquisition()
     // Start acquisition
     rhs_->startAcquisition();
 
+    // Start the serial I/O thread
     serialRunning_.store(true);
     serialThread_ = std::thread(&DataThreadPlugin::serialLoop, this);
 
-    startThread(); // kicks the updateBuffer() loop
+    // Start the DataThread
+    startThread();
     return true;
 }
 // ==============================================================================================================================
@@ -297,7 +313,7 @@ bool DataThreadPlugin::updateBuffer()
         {
             const int sampleOffset = i * BYTES_PER_SAMPLE;
 
-            // --- AC (16-bit, uV) ---
+            // AC channels (16 ch, µV)
             for (int outCh = 0; outCh < NUM_CH; ++outCh) {
                 const int hwCh      = CH_MAP[static_cast<size_t>(outCh)];
                 const int byteIndex = sampleOffset + (hwCh * 2);
@@ -307,23 +323,26 @@ bool DataThreadPlugin::updateBuffer()
                 samplesAC[static_cast<size_t>(outCh) * BLOCK_NSAMP + static_cast<size_t>(i)] = uV;
             }
 
-            // --- DC (10-bit, mV) ---
+            //  DC channels (16 ch, uV)
             for (int outCh = 0; outCh < NUM_CH; ++outCh) {
                 const int hwCh      = DC10_MAP[static_cast<size_t>(outCh)];
                 const int byteIndex = sampleOffset + (hwCh * 2);
                 const uint16 raw16  = readLE16(payload + byteIndex);
                 const int adc10     = static_cast<int>(raw16 & DC_MASK_10B);
                 const int centered  = adc10 - DC_CENTER_10B;
-                const float mV      = DC_MV_PER_LSB * static_cast<float>(centered);
-                samplesDC[static_cast<size_t>(outCh) * BLOCK_NSAMP + static_cast<size_t>(i)] = mV;
+                const float uV      = DC_UV_PER_LSB * static_cast<float>(centered);
+                samplesDC[static_cast<size_t>(outCh) * BLOCK_NSAMP + static_cast<size_t>(i)] = uV;
             }
         }
 
-        // publish
+        // publish to DataBuffer
         dataBufferAC_->addToBuffer(samplesAC.data(), sampleNumbers.data(), timestamps.data(), eventCodes.data(), BLOCK_NSAMP);
         dataBufferDC_->addToBuffer(samplesDC.data(), sampleNumbers.data(), timestamps.data(), eventCodes.data(), BLOCK_NSAMP);
 
+        // advance total sample count
         totalSamples_ += BLOCK_NSAMP;
+
+        // release the raw slot
         queue_->releaseFree(idx);
         ++drained;
     }
@@ -420,21 +439,24 @@ bool DataThreadPlugin::setSerialPort(const std::string& name)
 
 bool DataThreadPlugin::setSampleRate(int hz)
 {
-    if (hz <= 0) return false;
+    if (hz <= 0) 
+        return false;
     sampleRateHz_ = hz;
     return true;
 }
 
 bool DataThreadPlugin::setLowerBandwidthHz(double hz)
 {
-    if (hz <= 0.0) return false;
+    if (hz <= 0.0) 
+        return false;
     lowerBwHz_ = hz;
     return true;
 }
 
 bool DataThreadPlugin::setUpperBandwidthHz(double hz)
 {
-    if (hz <= 0.0) return false;
+    if (hz <= 0.0) 
+        return false;
     upperBwHz_ = hz;
     return true;
 }
@@ -447,17 +469,136 @@ bool DataThreadPlugin::setDspEnabled(bool enabled)
 
 bool DataThreadPlugin::setDspKFactor(int k)
 {
-    if (k < 0) return false;
+    if (k < 0) 
+        return false;
     dspK_ = k;
     return true;
 }
 
 bool DataThreadPlugin::setAcquisitionTimeSeconds(int seconds)
 {
-    if (seconds < 0) return false;
+    if (seconds < 0) 
+        return false;
     acquisitionTimeSec_ = seconds;
     return true;
 }
+
+bool DataThreadPlugin::setStimEnabled(bool v)
+{ 
+    stimEnabled_ = v; 
+    return true; 
+}
+
+bool DataThreadPlugin::setStimVoltage(double v)          
+{ 
+    stimVoltageV_ = v; 
+    return true; 
+}
+
+bool DataThreadPlugin::setStimStepNa(int v)              
+{ 
+    if (v<=0) 
+        return false; 
+    stimStepNa_ = v; 
+    return true; 
+}
+
+bool DataThreadPlugin::setStimPosCurrent(int v)          
+{ 
+    if (v<1||v>255) 
+        return false; 
+    stimPosCurrent_ = v; 
+    return true; 
+}
+
+bool DataThreadPlugin::setStimNegCurrent(int v)          
+{ 
+    if (v<1||v>255) 
+        return false; 
+    stimNegCurrent_ = v; 
+    return true; 
+}
+
+bool DataThreadPlugin::setStimType(int v)                
+{ 
+    if (v<0||v>1) 
+        return false; 
+    stimType_ = v; 
+    return true; 
+}
+
+bool DataThreadPlugin::setStimPolarity(int v)            
+{ 
+    if (v<0||v>1) 
+        return false; 
+    stimPolarity_ = v; 
+    return true; 
+}
+
+bool DataThreadPlugin::setStimClkPos(int v)              
+{ 
+    if (v<0) 
+        return false; 
+    stimClkPos_ = v; 
+    return true; 
+}
+
+bool DataThreadPlugin::setStimClkNeg(int v)              
+{ 
+    if (v<0) 
+        return false; 
+    stimClkNeg_ = v; 
+    return true; 
+}
+
+bool DataThreadPlugin::setStimContinuous(int v)          
+{ 
+    if (v<0||v>1) 
+        return false; 
+    stimContinuous_ = v; 
+    return true; 
+}
+
+bool DataThreadPlugin::setChargeRecoveryEnable(int v)    
+{ 
+    if (v<0||v>1) 
+        return false; 
+    crEnable_ = v; 
+    return true; 
+}
+
+bool DataThreadPlugin::setChargeRecoveryClk(int v)       
+{ 
+    if (v<0) 
+        return false; 
+    crClk_ = v; 
+    return true; 
+}
+
+bool DataThreadPlugin::setStimulationTimeMs(int v)       
+{ 
+    if (v<0) 
+        return false; 
+    stimTimeMs_ = v; 
+    return true; 
+}
+
+bool DataThreadPlugin::setStimSequence(const std::vector<StimCmd>& seq) {
+    stimSeq_.clear();
+
+    const size_t cap = (seq.size() < static_cast<size_t>(kMaxStimSeq))
+                       ? seq.size()
+                       : static_cast<size_t>(kMaxStimSeq);
+
+    stimSeq_.reserve(cap);
+    for (size_t i = 0; i < cap; ++i)
+        stimSeq_.push_back(seq[i]);
+
+    stimSeqIdx_ = 0;
+    return true;
+}
+
+
 
 bool DataThreadPlugin::setPresetFolderPath(const std::string& path)
 {
@@ -479,39 +620,56 @@ bool DataThreadPlugin::startSequence()
 
 void DataThreadPlugin::presetSequenceThread()
 {
-    using clock = std::chrono::steady_clock;
-
     for (int i = 0; i < gSeqCount && sequenceRunning_.load(); ++i)
     {
-        if (!loadAndApplyPreset(i)) continue;                  
-        CoreServices::setRecordingStatus(true);                // start acquisition+recording
+        if (!loadAndApplyPreset(i)) continue;
+        CoreServices::setRecordingStatus(true);
 
         const int secs = acquisitionTimeSec_;
-        if (secs > 0) {
-            const auto t0 = clock::now();
-            int printed = 0;
-            while (sequenceRunning_.load()) {
-                const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(clock::now() - t0).count();
-                if (elapsed >= secs) break;
-                if (elapsed > printed) {
-                    printed = static_cast<int>(elapsed);
-                    std::printf("[STM32-RHS2116] preset %d: %d/%d s\n", i+1, printed, secs);
-                    std::fflush(stdout);
-                }
-                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        bool stimActive = (stimEnabled_ && stimTimeMs_ > 0 && !stimSeq_.empty());
+        size_t stimIdx = 0;
+
+        auto t0 = std::chrono::steady_clock::now();
+        auto nextStim = t0 + std::chrono::milliseconds(stimTimeMs_);
+
+        int printed = 0;
+        while (sequenceRunning_.load())
+        {
+            auto now = std::chrono::steady_clock::now();
+            auto elapsed_s = std::chrono::duration_cast<std::chrono::seconds>(now - t0).count();
+            if (secs > 0 && elapsed_s >= secs) break;
+
+            if (elapsed_s > printed) {
+                printed = (int)elapsed_s;
+                //std::printf("[STM32-RHS2116] preset %d: %d/%d s\n", i+1, printed, secs);
+                //std::fflush(stdout);
             }
+
+            if (stimActive && now >= nextStim)
+            {
+                const auto& c = stimSeq_[stimIdx];
+                if (rhs_) rhs_->stim(c.mode, c.ch1, c.ch2);
+
+                ++stimIdx;
+                if (stimIdx >= stimSeq_.size()) {
+                    stimActive = false;
+                } else {
+                    nextStim += std::chrono::milliseconds(stimTimeMs_);
+                }
+            }
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
 
-
-        CoreServices::setAcquisitionStatus(false);               // stop acquisition+recording
-        std::this_thread::sleep_for(std::chrono::seconds(5));   // let OE settle
-        
+        CoreServices::setAcquisitionStatus(false);
+        std::this_thread::sleep_for(std::chrono::seconds(5));
     }
-    // Sequence finished or stopped
-    if (editor_)    
-        editor_->setStartToggle(false);
+
+    if (editor_) editor_->setStartToggle(false);
     sequenceRunning_.store(false);
 }
+
+
 
 
 bool DataThreadPlugin::stopSequence()
