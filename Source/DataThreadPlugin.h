@@ -100,6 +100,10 @@ private:
     static constexpr int MAX_DRAIN_PER_CALL = 8; // parse/push up to N raw blocks per updateBuffer()
     static constexpr int N_BLOCKS = 256;         // pool size for raw blocks
 
+    static constexpr uint8 ENV_SYNC          = 0xDD;
+    static constexpr int   ENV_BYTES_AFTER_H = 6;    // 4B tsLE32 + 1B T(int8) + 1B RH(int8)
+    static constexpr int   N_ENV_BLOCKS      = 512;  // pool size
+
     // ===================== Producer–consumer data structures =================
     struct RawBlock {
         std::array<uint8, BLOCK_BYTES> bytes{};
@@ -122,6 +126,34 @@ private:
         std::condition_variable cvFree_, cvReady_;
         std::deque<int> free_, ready_;
     };
+
+
+    // ===================== ENV mini-queue =====================
+    struct EnvBlock { std::array<uint8, 6> bytes{}; }; // 4B ts + 1B T + 1B RH
+
+    class EnvPoolQueue {
+    public:
+        explicit EnvPoolQueue(int n) : storage_(static_cast<size_t>(n)) { for (int i=0;i<n;++i) free_.push_back(i); }
+        int  acquireFreeBlocking(std::atomic_bool& stopFlag);
+        void pushReady(int idx);
+        bool tryPopReady(int& idx);
+        void releaseFree(int idx);
+        EnvBlock& at(int idx) { return storage_[static_cast<size_t>(idx)]; }
+        void reset();
+    private:
+        std::vector<EnvBlock> storage_;
+        std::mutex m_; std::condition_variable cvFree_, cvReady_;
+        std::deque<int> free_, ready_;
+    };
+
+    // Threads (ENV)
+    void envPrintLoop();
+    std::thread envThread_;
+    std::atomic_bool envRunning_{false};
+    std::unique_ptr<EnvPoolQueue> envQueue_;
+
+        
+        
 
     // ===================== Threads =====================
     void serialLoop();                // I/O thread: frame on 0xAA and enqueue 8004B raw

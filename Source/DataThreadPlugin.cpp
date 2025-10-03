@@ -90,7 +90,27 @@ int DataThreadPlugin::PacketPoolQueue::readySize() const {
 
 
 
-
+// ============================ EnvPoolQueue impl =============================
+int DataThreadPlugin::EnvPoolQueue::acquireFreeBlocking(std::atomic_bool& stopFlag) {
+    std::unique_lock<std::mutex> lk(m_);
+    cvFree_.wait(lk, [&]{ return !free_.empty() || stopFlag.load(); });
+    if (stopFlag.load() && free_.empty()) return -1;
+    int idx = free_.front(); free_.pop_front(); return idx;
+}
+void DataThreadPlugin::EnvPoolQueue::pushReady(int idx) {
+    { std::lock_guard<std::mutex> lk(m_); ready_.push_back(idx); } cvReady_.notify_one();
+}
+bool DataThreadPlugin::EnvPoolQueue::tryPopReady(int& idx) {
+    std::lock_guard<std::mutex> lk(m_); if (ready_.empty()) return false; idx=ready_.front(); ready_.pop_front(); return true;
+}
+void DataThreadPlugin::EnvPoolQueue::releaseFree(int idx) {
+    { std::lock_guard<std::mutex> lk(m_); free_.push_back(idx); } cvFree_.notify_one();
+}
+void DataThreadPlugin::EnvPoolQueue::reset() {
+    std::lock_guard<std::mutex> lk(m_); ready_.clear(); free_.clear();
+    for (int i=0;i<(int)storage_.size();++i) free_.push_back(i);
+}
+// ==============================================================================================================================
 
 
 
@@ -102,6 +122,7 @@ DataThreadPlugin::DataThreadPlugin (SourceNode* sn)
 : DataThread (sn)
 {
     queue_ = std::make_unique<PacketPoolQueue>(N_BLOCKS);
+    envQueue_ = std::make_unique<EnvPoolQueue>(N_ENV_BLOCKS);
 }
 
 DataThreadPlugin::~DataThreadPlugin()
@@ -205,6 +226,7 @@ void DataThreadPlugin::updateSettings (OwnedArray<ContinuousChannel>* continuous
 
     totalSamples_ = 0;
     if (queue_) queue_->reset();
+    if (envQueue_) envQueue_->reset();
 
 }
 // ==============================================================================================================================
@@ -259,6 +281,9 @@ bool DataThreadPlugin::startAcquisition()
     // Start the serial I/O thread
     serialRunning_.store(true);
     serialThread_ = std::thread(&DataThreadPlugin::serialLoop, this);
+
+    envRunning_.store(true);
+    envThread_ = std::thread(&DataThreadPlugin::envPrintLoop, this);
 
     // Start the DataThread
     startThread();
@@ -380,6 +405,9 @@ bool DataThreadPlugin::stopAcquisition()
 
     if (dataBufferDC_ != nullptr)
         dataBufferDC_->clear();
+
+    envRunning_.store(false);
+    if (envThread_.joinable()) envThread_.join();
     return true;
 }
 // ==============================================================================================================================
@@ -394,36 +422,70 @@ bool DataThreadPlugin::stopAcquisition()
 // ===================================================== Serial I/O thread  =====================================================
 void DataThreadPlugin::serialLoop()
 {
-    // Seek 0xAA, then read 8004 bytes and push to queue.
     uint8 b = 0;
 
     while (serialRunning_.load())
     {
-        // 1) Find sync byte 0xAA (read 1 byte at a time)
+        // find a valid sync
         do {
             serial_.readData(reinterpret_cast<char*>(&b), 1);
-        } while (b != SYNC_BYTE && serialRunning_.load());
+        } while (serialRunning_.load() && b != SYNC_BYTE && b != ENV_SYNC);
 
         if (!serialRunning_.load()) break;
 
-        // 2) Acquire a raw slot, read 8004 bytes (timestamp + payload), enqueue
-        int idx = queue_->acquireFreeBlocking(serialRunning_);
-        if (idx < 0) break;
-        auto& raw = queue_->at(idx);
-        size_t got = 0;
-        while (got < static_cast<size_t>(BLOCK_BYTES) && serialRunning_.load()) {
-            long r = serial_.readData(reinterpret_cast<char*>(raw.bytes.data() + got),
-                                     static_cast<size_t>(BLOCK_BYTES) - got);
-            if (r > 0) got += static_cast<size_t>(r);
+        if (b == SYNC_BYTE)
+        {
+            int idx = queue_->acquireFreeBlocking(serialRunning_); if (idx < 0) break;
+            auto& raw = queue_->at(idx);
+            size_t got = 0;
+            while (got < static_cast<size_t>(BLOCK_BYTES) && serialRunning_.load()) {
+                long r = serial_.readData(reinterpret_cast<char*>(raw.bytes.data() + got),
+                                          static_cast<size_t>(BLOCK_BYTES) - got);
+                if (r > 0) got += static_cast<size_t>(r);
+            }
+            queue_->pushReady(idx);
         }
-
-        //push to ready queue if we got a full packet
-        queue_->pushReady(idx);
+        else // ENV_SYNC
+        {
+            int idx = envQueue_->acquireFreeBlocking(serialRunning_); if (idx < 0) break;
+            auto& eb = envQueue_->at(idx);
+            size_t got = 0;
+            while (got < static_cast<size_t>(ENV_BYTES_AFTER_H) && serialRunning_.load()) {
+                long r = serial_.readData(reinterpret_cast<char*>(eb.bytes.data() + got),
+                                          static_cast<size_t>(ENV_BYTES_AFTER_H) - got);
+                if (r > 0) got += static_cast<size_t>(r);
+            }
+            envQueue_->pushReady(idx);
+        }
     }
 }
+
 // ==============================================================================================================================
 
 
+void DataThreadPlugin::envPrintLoop()
+{
+    int idx = -1;
+    while (envRunning_.load())
+    {
+        if (envQueue_->tryPopReady(idx))
+        {
+            auto& eb = envQueue_->at(idx);
+            const uint32 ts = readLE32(eb.bytes.data())/10000;
+            const int8_t tC = static_cast<int8_t>(eb.bytes[4]);
+            const int8_t rh = static_cast<int8_t>(eb.bytes[5]);
+
+            std::printf("[STM32-RHS2116] ts=%u s, temp=%d C, humidity=%d %%\n", ts, (int)tC, (int)rh);
+            std::fflush(stdout);
+
+            envQueue_->releaseFree(idx);
+        }
+        else
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    }
+}
 
 
 
