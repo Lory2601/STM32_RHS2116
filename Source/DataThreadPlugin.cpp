@@ -187,13 +187,27 @@ void DataThreadPlugin::updateSettings (OwnedArray<ContinuousChannel>* continuous
         sourceStreams->add(streamDC_);
     }
 
-    // --- allocate 2 internal buffers (capienza ampia) ---
+    // --- ENV stream (2 ch, uV) ---
+    {
+        DataStream::Settings ds {
+            "env_stream",
+            "Environmental (Temp °C, Humidity %) in uV",
+            "env_stream_id",
+            sampleRateHz_ 
+        };
+        streamENV_ = new DataStream(ds);
+        sourceStreams->add(streamENV_);
+    }
+
+    // --- allocate 2 internal buffers
     {
         const int internalCapacity = 30000000; // samples per channel
         sourceBuffers.add(new DataBuffer(NUM_CH, internalCapacity)); // AC
         dataBufferAC_ = sourceBuffers.getLast();
         sourceBuffers.add(new DataBuffer(NUM_CH, internalCapacity)); // DC
         dataBufferDC_ = sourceBuffers.getLast();
+        sourceBuffers.add(new DataBuffer(ENV_NUM_CH, internalCapacity)); // ENV
+        dataBufferENV_ = sourceBuffers.getLast();
     }
 
     // --- 16 canali AC in microvolt ---
@@ -224,6 +238,33 @@ void DataThreadPlugin::updateSettings (OwnedArray<ContinuousChannel>* continuous
         continuousChannels->add(new ContinuousChannel(cs));
     }
 
+    // --- 2 ENV channels in microvolt (1:1 mapping) ---
+    {
+        // ch 0: Temperature
+        ContinuousChannel::Settings csT{
+            ContinuousChannel::Type::ELECTRODE,
+            "Temp",
+            "ENV (uV)",               
+            "env_temp_uV",
+            1.0,
+            streamENV_
+        };
+        continuousChannels->add(new ContinuousChannel(csT));
+
+        // ch 1: Humidity
+        ContinuousChannel::Settings csH{
+            ContinuousChannel::Type::ELECTRODE,
+            "Hum",
+            "ENV (uV)",               
+            "env_humidity_uV",
+            1.0,
+            streamENV_
+        };
+        continuousChannels->add(new ContinuousChannel(csH));
+    }
+
+    // reset env sample counter
+    envSamples_ = 0;
     totalSamples_ = 0;
     if (queue_) queue_->reset();
     if (envQueue_) envQueue_->reset();
@@ -242,6 +283,7 @@ void DataThreadPlugin::updateSettings (OwnedArray<ContinuousChannel>* continuous
 bool DataThreadPlugin::startAcquisition()
 {
     totalSamples_ = 0;
+    envSamples_ = 0;
 
     // Open serial port and configure the device
     serial_.setup(serialPort_, serialBaud_);
@@ -360,9 +402,25 @@ bool DataThreadPlugin::updateBuffer()
             }
         }
 
+        // --- build ENV block with zero-order hold (fill gaps at ~1 Hz) ---
+        static thread_local std::array<float, ENV_NUM_CH * BLOCK_NSAMP> envBlock;
+
+        float vT = envTempUV_.load(std::memory_order_relaxed);
+        float vH = envRhUV_.load(std::memory_order_relaxed);
+        // default to 0 if not yet received
+        if (std::isnan(vT)) vT = 0.0f;
+        if (std::isnan(vH)) vH = 0.0f;
+
+        // channel-major layout: ch*NS + i
+        for (int i = 0; i < BLOCK_NSAMP; ++i) {
+            envBlock[0 * BLOCK_NSAMP + i] = vT; // Temperature (uV)
+            envBlock[1 * BLOCK_NSAMP + i] = vH; // Humidity    (uV)
+        }
+
         // publish to DataBuffer
-        dataBufferAC_->addToBuffer(samplesAC.data(), sampleNumbers.data(), timestamps.data(), eventCodes.data(), BLOCK_NSAMP);
-        dataBufferDC_->addToBuffer(samplesDC.data(), sampleNumbers.data(), timestamps.data(), eventCodes.data(), BLOCK_NSAMP);
+        dataBufferAC_->addToBuffer(samplesAC.data(), sampleNumbers.data(), timestamps.data(), eventCodes.data(), BLOCK_NSAMP); // AC
+        dataBufferDC_->addToBuffer(samplesDC.data(), sampleNumbers.data(), timestamps.data(), eventCodes.data(), BLOCK_NSAMP); // DC
+        dataBufferENV_->addToBuffer(envBlock.data(), sampleNumbers.data(), timestamps.data(), eventCodes.data(), BLOCK_NSAMP); // ENV
 
         // advance total sample count
         totalSamples_ += BLOCK_NSAMP;
@@ -406,6 +464,9 @@ bool DataThreadPlugin::stopAcquisition()
     if (dataBufferDC_ != nullptr)
         dataBufferDC_->clear();
 
+    if (dataBufferENV_ != nullptr)
+        dataBufferENV_->clear();
+
     envRunning_.store(false);
     if (envThread_.joinable()) envThread_.join();
     return true;
@@ -445,7 +506,7 @@ void DataThreadPlugin::serialLoop()
             }
             queue_->pushReady(idx);
         }
-        else // ENV_SYNC
+        else if (b == ENV_SYNC)
         {
             int idx = envQueue_->acquireFreeBlocking(serialRunning_); if (idx < 0) break;
             auto& eb = envQueue_->at(idx);
@@ -477,6 +538,19 @@ void DataThreadPlugin::envPrintLoop()
 
             std::printf("[STM32-RHS2116] ts=%u s, temp=%d C, humidity=%d %%\n", ts, (int)tC, (int)rh);
             std::fflush(stdout);
+
+
+            //   Temp [°C] -> uV with same numeric value (e.g., 37°C -> 37 uV)
+            //   Humidity [%] -> uV with same numeric value (e.g., 100% -> 100 uV)
+
+            // store latest values (°C -> uV, % -> uV) for zero-order hold
+            envTempUV_.store(static_cast<float>(tC), std::memory_order_relaxed);
+            envRhUV_.store(static_cast<float>(rh),   std::memory_order_relaxed);
+
+            // store latest sample metadata
+            sampleNumbers_env[0] = envSamples_++;
+            timestamps_env[0]    = static_cast<double>(ts);
+
 
             envQueue_->releaseFree(idx);
         }

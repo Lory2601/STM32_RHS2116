@@ -104,6 +104,7 @@ private:
     static constexpr int   ENV_BYTES_AFTER_H = 6;    // 4B tsLE32 + 1B T(int8) + 1B RH(int8)
     static constexpr int   N_ENV_BLOCKS      = 512;  // pool size
 
+
     // ===================== Producer–consumer data structures =================
     struct RawBlock {
         std::array<uint8, BLOCK_BYTES> bytes{};
@@ -167,6 +168,20 @@ private:
     DataBuffer* dataBufferDC_  = nullptr;
     DataStream* streamAC_      = nullptr;
     DataStream* streamDC_      = nullptr;
+
+    // --- ENV stream (2 channels: Temperature [°C], Humidity [%]), plotted in µV ---
+    DataBuffer* dataBufferENV_ = nullptr;
+    DataStream* streamENV_     = nullptr;
+    static constexpr int ENV_NUM_CH = 2; // ch0=Temp(°C)->µV, ch1=RH(%) -> µV
+    int64 envSamples_ = 0;               // separate monotonic counter for ENV samples
+    float samples_env[ENV_NUM_CH];
+    int64 sampleNumbers_env[1];
+    double timestamps_env[1];
+    uint64 eventCodes_env[1] = {0};
+    // --- last ENV readings (pushed at 1 Hz; used to fill gaps) ---
+    std::atomic<float> envTempUV_{NAN};
+    std::atomic<float> envRhUV_{NAN};
+
 
     // AC scale: we push microvolts (already in code)
     static constexpr float AC_UV_PER_LSB = 0.195f; // uV
