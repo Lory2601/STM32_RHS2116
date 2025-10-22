@@ -215,9 +215,9 @@ void DataThreadPlugin::updateSettings (OwnedArray<ContinuousChannel>* continuous
     {
         ContinuousChannel::Settings cs{
             ContinuousChannel::Type::ELECTRODE,
-            "RHS AC CH" + String(ch + 1),
+            "CH" + String(ch + 1),
             "RHS2116 (uV)",
-            "rhs_ac_ch_" + String(ch + 1),
+            "rhs_ac_ch_" + String(ch),
             1.0,
             streamAC_
         };
@@ -229,9 +229,9 @@ void DataThreadPlugin::updateSettings (OwnedArray<ContinuousChannel>* continuous
     {
         ContinuousChannel::Settings cs{
             ContinuousChannel::Type::ELECTRODE,
-            "RHS DC CH" + String(ch + 1),
+            "CH" + String(ch + 1),
             "RHS2116 (mV)",
-            "rhs_dc_ch_" + String(ch + 1),
+            "rhs_dc_ch_" + String(ch),
             1.0,
             streamDC_
         };
@@ -286,7 +286,29 @@ bool DataThreadPlugin::startAcquisition()
     envSamples_ = 0;
 
     // Open serial port and configure the device
-    serial_.setup(serialPort_, serialBaud_);
+    //serial_.setup(serialPort_, serialBaud_);
+
+    // Open serial port and configure the device (with N retries)
+    const int kMaxAttempts = 20;
+    const int kDelayMs     = 500;
+
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    bool opened = false;
+    for (int attempt = 1; attempt <= kMaxAttempts && !opened; ++attempt) {
+        serial_.setup(serialPort_, serialBaud_);
+        opened = serial_.isInitialized();
+        if (!opened) {
+            std::printf("[STM32-RHS2116] serial open failed (%d/%d)\n",
+                        attempt, kMaxAttempts);
+            std::fflush(stdout);
+            std::this_thread::sleep_for(std::chrono::milliseconds(kDelayMs));
+        }
+    }
+    if (!opened) {
+        std::printf("[STM32-RHS2116] ERROR: cannot open serial after %d attempts\n", kMaxAttempts);
+        return false;
+    }
+
     rhs_ = std::make_unique<IntanRHS2116>(serial_);
 
 
@@ -317,15 +339,15 @@ bool DataThreadPlugin::startAcquisition()
     // Wait a bit for the device to settle
     std::this_thread::sleep_for(std::chrono::seconds(1));
 
-    // Start acquisition
-    rhs_->startAcquisition();
-
     // Start the serial I/O thread
     serialRunning_.store(true);
     serialThread_ = std::thread(&DataThreadPlugin::serialLoop, this);
 
     envRunning_.store(true);
     envThread_ = std::thread(&DataThreadPlugin::envPrintLoop, this);
+
+    // Start acquisition
+    rhs_->startAcquisition();
 
     // Start the DataThread
     startThread();
@@ -448,8 +470,8 @@ bool DataThreadPlugin::stopAcquisition()
     // Stop device
     if (rhs_){
         rhs_->stopAcquisition();
-        rhs_->reset();
-    } 
+        //rhs_->reset();
+    }
 
     serialRunning_.store(false);
     if (serialThread_.joinable()) serialThread_.join();
@@ -469,6 +491,11 @@ bool DataThreadPlugin::stopAcquisition()
 
     envRunning_.store(false);
     if (envThread_.joinable()) envThread_.join();
+
+    // Close serial port
+    serial_.flush(true, true);  // input + output
+    serial_.close();
+
     return true;
 }
 // ==============================================================================================================================
@@ -759,6 +786,7 @@ void DataThreadPlugin::presetSequenceThread()
     for (int i = 0; i < gSeqCount && sequenceRunning_.load(); ++i)
     {
         if (!loadAndApplyPreset(i)) continue;
+        CoreServices::setAcquisitionStatus(true);
         CoreServices::setRecordingStatus(true);
 
         const int secs = acquisitionTimeSec_;
@@ -797,8 +825,9 @@ void DataThreadPlugin::presetSequenceThread()
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
 
+        CoreServices::setRecordingStatus(false);
         CoreServices::setAcquisitionStatus(false);
-        std::this_thread::sleep_for(std::chrono::seconds(5));
+        std::this_thread::sleep_for(std::chrono::seconds(delayAfterStim_sec_));
     }
 
     if (editor_) editor_->setStartToggle(false);
@@ -812,6 +841,7 @@ bool DataThreadPlugin::stopSequence()
 {
     sequenceRunning_.store(false);
     if (sequenceThread_.joinable()) sequenceThread_.join();
+    CoreServices::setRecordingStatus(false);
     CoreServices::setAcquisitionStatus(false);
     return true;
 }
@@ -881,7 +911,7 @@ bool DataThreadPlugin::loadAndApplyPreset(int index)
     }
 
     // Log which preset is being applied
-    std::printf("\n\n\n[STM32-RHS2116] ============== Applying preset #%d: %s ==============\n\n", index+1, preset.getFileName().toRawUTF8());
+    std::printf("\n\n\n[STM32-RHS2116] ============== Applying preset #%d / %d: %s ==============\n\n", index+1, gSeqCount, preset.getFileName().toRawUTF8());
 
     if (!editor_) { std::printf("[STM32-RHS2116] Editor not attached\n"); return false; }
     if (!editor_->applyPresetObject(root)) return false;

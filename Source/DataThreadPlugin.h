@@ -189,7 +189,7 @@ private:
     // DC (10-bit) scale: we push millivolts
     static constexpr int   DC_CENTER_10B = 512;
     static constexpr uint16 DC_MASK_10B  = 0x03FF;
-    static constexpr float DC_UV_PER_LSB = -19230.0f; 
+    static constexpr float DC_UV_PER_LSB = -19.230f; //-19230.0f
     
     // ===================== Channel mapping =====================
     static constexpr int NUM_CH = 16;
@@ -232,9 +232,11 @@ private:
     int    stimTimeMs_     = 0;   // 0 = off
 
     
-    static constexpr int kMaxStimSeq = 64;
+    static constexpr int kMaxStimSeq = 200;
     std::vector<StimCmd> stimSeq_;   // bounded to kMaxStimSeq
     size_t stimSeqIdx_ = 0;
+
+    int delayAfterStim_sec_ = 5; // wait N seconds after stim sequence ends
 
 
     int  acquisitionTimeSec_ = 0;
