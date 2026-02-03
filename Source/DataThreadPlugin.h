@@ -103,6 +103,12 @@ private:
     static constexpr uint8 ENV_SYNC          = 0xDD;
     static constexpr int   ENV_BYTES_AFTER_H = 6;    // 4B tsLE32 + 1B T(int8) + 1B RH(int8)
     static constexpr int   N_ENV_BLOCKS      = 512;  // pool size
+    
+    // SPAD (synchronous parallel activity detection)
+    static constexpr uint8 SPAD_SYNC         = 0xEE;
+    static constexpr int   SPAD_NSAMP        = 1000; // samples per SPAD packet
+    static constexpr int   SPAD_BYTES_AFTER_H = TIMESTAMP_BYTES + SPAD_NSAMP; // 4 + 1000
+    static constexpr int   N_SPAD_BLOCKS     = 256;
 
 
     // ===================== Producer–consumer data structures =================
@@ -132,6 +138,8 @@ private:
     // ===================== ENV mini-queue =====================
     struct EnvBlock { std::array<uint8, 6> bytes{}; }; // 4B ts + 1B T + 1B RH
 
+    struct SpadBlock { std::array<uint8, SPAD_BYTES_AFTER_H> bytes{}; };
+
     class EnvPoolQueue {
     public:
         explicit EnvPoolQueue(int n) : storage_(static_cast<size_t>(n)) { for (int i=0;i<n;++i) free_.push_back(i); }
@@ -143,6 +151,21 @@ private:
         void reset();
     private:
         std::vector<EnvBlock> storage_;
+        std::mutex m_; std::condition_variable cvFree_, cvReady_;
+        std::deque<int> free_, ready_;
+    };
+
+    class SpadPoolQueue {
+    public:
+        explicit SpadPoolQueue(int n) : storage_(static_cast<size_t>(n)) { for (int i=0;i<n;++i) free_.push_back(i); }
+        int  acquireFreeBlocking(std::atomic_bool& stopFlag);
+        void pushReady(int idx);
+        bool tryPopReady(int& idx);
+        void releaseFree(int idx);
+        SpadBlock& at(int idx) { return storage_[static_cast<size_t>(idx)]; }
+        void reset();
+    private:
+        std::vector<SpadBlock> storage_;
         std::mutex m_; std::condition_variable cvFree_, cvReady_;
         std::deque<int> free_, ready_;
     };
@@ -181,6 +204,13 @@ private:
     // --- last ENV readings (pushed at 1 Hz; used to fill gaps) ---
     std::atomic<float> envTempUV_{NAN};
     std::atomic<float> envRhUV_{NAN};
+
+    // --- SPAD stream (8 channels, uV) ---
+    DataBuffer* dataBufferSPAD_ = nullptr;
+    DataStream* streamSPAD_     = nullptr;
+    static constexpr int SPAD_NUM_CH = 8;
+    int64 spadTotalSamples_ = 0;
+    std::unique_ptr<SpadPoolQueue> spadQueue_;
 
 
     // AC scale: we push microvolts (already in code)

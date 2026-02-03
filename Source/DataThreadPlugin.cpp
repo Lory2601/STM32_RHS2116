@@ -110,6 +110,17 @@ void DataThreadPlugin::EnvPoolQueue::reset() {
     std::lock_guard<std::mutex> lk(m_); ready_.clear(); free_.clear();
     for (int i=0;i<(int)storage_.size();++i) free_.push_back(i);
 }
+
+int DataThreadPlugin::SpadPoolQueue::acquireFreeBlocking(std::atomic_bool& stopFlag) {
+    std::unique_lock<std::mutex> lk(m_);
+    cvFree_.wait(lk, [&]{ return !free_.empty() || stopFlag.load(); });
+    if (stopFlag.load() && free_.empty()) return -1;
+    int idx = free_.front(); free_.pop_front(); return idx;
+}
+void DataThreadPlugin::SpadPoolQueue::pushReady(int idx) { { std::lock_guard<std::mutex> lk(m_); ready_.push_back(idx); } cvReady_.notify_one(); }
+bool DataThreadPlugin::SpadPoolQueue::tryPopReady(int& idx) { std::lock_guard<std::mutex> lk(m_); if (ready_.empty()) return false; idx=ready_.front(); ready_.pop_front(); return true; }
+void DataThreadPlugin::SpadPoolQueue::releaseFree(int idx) { { std::lock_guard<std::mutex> lk(m_); free_.push_back(idx); } cvFree_.notify_one(); }
+void DataThreadPlugin::SpadPoolQueue::reset() { std::lock_guard<std::mutex> lk(m_); ready_.clear(); free_.clear(); for (int i=0;i<(int)storage_.size();++i) free_.push_back(i); }
 // ==============================================================================================================================
 
 
@@ -123,6 +134,7 @@ DataThreadPlugin::DataThreadPlugin (SourceNode* sn)
 {
     queue_ = std::make_unique<PacketPoolQueue>(N_BLOCKS);
     envQueue_ = std::make_unique<EnvPoolQueue>(N_ENV_BLOCKS);
+    spadQueue_ = std::make_unique<SpadPoolQueue>(N_SPAD_BLOCKS);
 }
 
 DataThreadPlugin::~DataThreadPlugin()
@@ -169,7 +181,8 @@ void DataThreadPlugin::updateSettings (OwnedArray<ContinuousChannel>* continuous
             "rhs_AC_stream",
             "RHS2116 AC stream (16 ch, uV)",
             "rhs_ac_stream_id",
-            sampleRateHz_
+            sampleRateHz_,
+            true  // generates_timestamps
         };
         streamAC_ = new DataStream(ds);
         sourceStreams->add(streamAC_);
@@ -181,7 +194,8 @@ void DataThreadPlugin::updateSettings (OwnedArray<ContinuousChannel>* continuous
             "rhs_DC_stream",
             "RHS2116 DC stream (16 ch, mV)",
             "rhs_dc_stream_id",
-            sampleRateHz_
+            sampleRateHz_,
+            true  // generates_timestamps
         };
         streamDC_ = new DataStream(ds);
         sourceStreams->add(streamDC_);
@@ -193,10 +207,24 @@ void DataThreadPlugin::updateSettings (OwnedArray<ContinuousChannel>* continuous
             "env_stream",
             "Environmental (Temp °C, Humidity %) in uV",
             "env_stream_id",
-            sampleRateHz_ 
+            sampleRateHz_,
+            true  // generates_timestamps
         };
         streamENV_ = new DataStream(ds);
         sourceStreams->add(streamENV_);
+    }
+
+    // --- SPAD stream (8 ch, uV) ---
+    {
+        DataStream::Settings ds {
+            "spad_stream",
+            "SPAD stream (8 ch, uV)",
+            "spad_stream_id",
+            sampleRateHz_,
+            true  // generates_timestamps
+        };
+        streamSPAD_ = new DataStream(ds);
+        sourceStreams->add(streamSPAD_);
     }
 
     // --- allocate 2 internal buffers
@@ -208,6 +236,8 @@ void DataThreadPlugin::updateSettings (OwnedArray<ContinuousChannel>* continuous
         dataBufferDC_ = sourceBuffers.getLast();
         sourceBuffers.add(new DataBuffer(ENV_NUM_CH, internalCapacity)); // ENV
         dataBufferENV_ = sourceBuffers.getLast();
+        sourceBuffers.add(new DataBuffer(SPAD_NUM_CH, internalCapacity)); // SPAD
+        dataBufferSPAD_ = sourceBuffers.getLast();
     }
 
     // --- 16 canali AC in microvolt ---
@@ -263,11 +293,27 @@ void DataThreadPlugin::updateSettings (OwnedArray<ContinuousChannel>* continuous
         continuousChannels->add(new ContinuousChannel(csH));
     }
 
+    // --- SPAD channels in microvolt (binary bits -> uV) ---
+    for (int ch = 0; ch < SPAD_NUM_CH; ++ch)
+    {
+        ContinuousChannel::Settings cs{
+            ContinuousChannel::Type::ELECTRODE,
+            "SPAD" + String(ch + 1),
+            "SPAD (uV)",
+            "spad_ch_" + String(ch),
+            1.0,
+            streamSPAD_
+        };
+        continuousChannels->add(new ContinuousChannel(cs));
+    }
+
     // reset env sample counter
     envSamples_ = 0;
+    spadTotalSamples_ = 0;
     totalSamples_ = 0;
     if (queue_) queue_->reset();
     if (envQueue_) envQueue_->reset();
+    if (spadQueue_) spadQueue_->reset();
 
 }
 // ==============================================================================================================================
@@ -452,6 +498,43 @@ bool DataThreadPlugin::updateBuffer()
         ++drained;
     }
 
+    // --- drain SPAD queue and publish (binary bits -> uV) ---
+    {
+        int idx_spad = -1;
+        int drained_spad = 0;
+
+        while (drained_spad < MAX_DRAIN_PER_CALL && spadQueue_->tryPopReady(idx_spad)) {
+            std::array<float, SPAD_NUM_CH * SPAD_NSAMP> samplesSPAD{};
+            std::array<int64, SPAD_NSAMP> sampleNumbersSPAD{};
+            std::array<double, SPAD_NSAMP> timestampsSPAD{};
+            std::array<uint64, SPAD_NSAMP> eventCodesSPAD{};
+
+            auto& sb = spadQueue_->at(idx_spad);
+            const uint32 ticks = readLE32(sb.bytes.data());
+            const double ts0_s = (ticks * TS_TICK_US) * 1e-6;
+            const double dt_s  = 1.0 / sampleRateHz_;
+
+            for (int i = 0; i < SPAD_NSAMP; ++i) {
+                const int64 snum = spadTotalSamples_ + i;
+                sampleNumbersSPAD[static_cast<size_t>(i)] = snum;
+                timestampsSPAD[static_cast<size_t>(i)] = ts0_s + i * dt_s;
+                eventCodesSPAD[static_cast<size_t>(i)] = 0;
+
+                const uint8 v = sb.bytes[TIMESTAMP_BYTES + i];
+                for (int ch = 0; ch < SPAD_NUM_CH; ++ch) {
+                    const int bit = (v >> ch) & 1;
+                    const float uv = bit ? 3300.0f : 0.0f;
+                    samplesSPAD[static_cast<size_t>(ch) * SPAD_NSAMP + static_cast<size_t>(i)] = uv;
+                }
+            }
+
+            if (dataBufferSPAD_) dataBufferSPAD_->addToBuffer(samplesSPAD.data(), sampleNumbersSPAD.data(), timestampsSPAD.data(), eventCodesSPAD.data(), SPAD_NSAMP);
+            spadTotalSamples_ += SPAD_NSAMP;
+            spadQueue_->releaseFree(idx_spad);
+            ++drained_spad;
+        }
+    }
+
     return true;
 
 }
@@ -489,6 +572,9 @@ bool DataThreadPlugin::stopAcquisition()
     if (dataBufferENV_ != nullptr)
         dataBufferENV_->clear();
 
+    if (dataBufferSPAD_ != nullptr)
+        dataBufferSPAD_->clear();
+
     envRunning_.store(false);
     if (envThread_.joinable()) envThread_.join();
 
@@ -517,7 +603,7 @@ void DataThreadPlugin::serialLoop()
         // find a valid sync
         do {
             serial_.readData(reinterpret_cast<char*>(&b), 1);
-        } while (serialRunning_.load() && b != SYNC_BYTE && b != ENV_SYNC);
+        } while (serialRunning_.load() && b != SYNC_BYTE && b != ENV_SYNC && b != SPAD_SYNC);
 
         if (!serialRunning_.load()) break;
 
@@ -544,6 +630,18 @@ void DataThreadPlugin::serialLoop()
                 if (r > 0) got += static_cast<size_t>(r);
             }
             envQueue_->pushReady(idx);
+        }
+        else if (b == SPAD_SYNC)
+        {
+            int idx = spadQueue_->acquireFreeBlocking(serialRunning_); if (idx < 0) break;
+            auto& sb = spadQueue_->at(idx);
+            size_t got = 0;
+            while (got < static_cast<size_t>(SPAD_BYTES_AFTER_H) && serialRunning_.load()) {
+                long r = serial_.readData(reinterpret_cast<char*>(sb.bytes.data() + got),
+                                          static_cast<size_t>(SPAD_BYTES_AFTER_H) - got);
+                if (r > 0) got += static_cast<size_t>(r);
+            }
+            spadQueue_->pushReady(idx);
         }
     }
 }
