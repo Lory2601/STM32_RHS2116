@@ -492,6 +492,11 @@ bool DataThreadPluginEditor::applyPresetObject (const juce::var& root)
     int cr_enable        = 0;
     int cr_clk           = 0;
     int stim_time_ms     = 0;
+    int tlc_max_on      = 0;
+    int tlc_pwm         = 255;
+    int electrical_or_optic_stim       = 0;
+    int optic_clk       = 0;
+    std::vector<uint8_t> optic_seq;
 
     const bool hasFs            = getNum("samplerate",     fs);
     const bool hasLbw           = getNum("lowerbandwidth", lbw);
@@ -512,6 +517,35 @@ bool DataThreadPluginEditor::applyPresetObject (const juce::var& root)
     const bool hasCrEnable      = getInt("cr_enable",         cr_enable);
     const bool hasCrClk         = getInt("cr_clk",            cr_clk);
     const bool hasStimTime      = getInt("stimulation_time_ms", stim_time_ms);
+    const bool hasTlcMax        = getInt("tlc_max_on", tlc_max_on);
+    const bool hasTlcPwm        = getInt("tlc_pwm", tlc_pwm);
+    const bool hasStimMode      = getInt("electrical_or_optic_stim", electrical_or_optic_stim);
+    const bool hasOpticClk      = getInt("optic_clk", optic_clk);
+
+    // parse optic sequence: array of arrays of 8 ints -> vector<uint8_t>
+    auto getOpticSeq = [&root](std::vector<uint8_t>& out)->bool {
+        out.clear();
+        if (auto* obj = root.getDynamicObject()) {
+            juce::var v = obj->getProperty("optic_stim_sequence");
+            if (!v.isArray()) return false;
+            auto* arr = v.getArray();
+            for (auto& row : *arr) {
+                if (!row.isArray()) continue;
+                auto* a = row.getArray();
+                if (a->size() < 8) continue;
+                uint8_t pat = 0;
+                for (int i = 0; i < 8; ++i) {
+                    int bit = static_cast<int>((*a)[i]);
+                    if (bit != 0) pat |= (1u << i);
+                }
+                out.push_back(pat);
+            }
+            return true;
+        }
+        return false;
+    };
+
+    const bool hasOpticSeq      = getOpticSeq(optic_seq);
 
     // sequence
     std::vector<DataThreadPlugin::StimCmd> seq;
@@ -520,7 +554,7 @@ bool DataThreadPluginEditor::applyPresetObject (const juce::var& root)
     if (!(hasFs && hasLbw && hasUbw && hasDspE && hasDspN && hasAcqT && hasStimE 
             && hasStimV && hasStimStep && hasStimPos && hasStimNeg && hasStimType 
             && hasStimPol && hasStimClkPos && hasStimClkNeg && hasStimCont && hasCrEnable 
-            && hasCrClk && hasStimTime)) {
+            && hasCrClk && hasStimTime && hasTlcMax && hasTlcPwm && hasStimMode && hasOpticClk && hasOpticSeq)) {
         std::printf("[STM32-RHS2116] Preset missing required keys\n");
         return false;
     }
@@ -600,6 +634,11 @@ bool DataThreadPluginEditor::applyPresetObject (const juce::var& root)
         thread->setChargeRecoveryEnable(cr_enable);
         thread->setChargeRecoveryClk(cr_clk);
         thread->setStimulationTimeMs(stim_time_ms);
+        thread->setTlcMaxOn(tlc_max_on);
+        thread->setTlcPwm(tlc_pwm);
+        thread->setStimMode(electrical_or_optic_stim);
+        thread->setOpticClk(optic_clk);
+        if (!optic_seq.empty()) thread->setOpticSequence(optic_seq);
         if (!seq.empty()) 
             thread->setStimSequence(seq);
     }    

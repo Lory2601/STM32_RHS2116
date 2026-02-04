@@ -160,3 +160,33 @@ void IntanRHS2116::setDspFrequency(int kFactor) {
     sendCommand("DSP_FREQ:" + std::to_string(kFactor));
     std::cout << "[STM32-RHS2116] Command sent: DSP_FREQ with k value " << kFactor << "\n";
 }
+
+// ====== Public API: TLC LED controls ======================================
+void IntanRHS2116::setTlcAllOnMax() {
+    // Send command to device that instructs the MCU to set all TLC channels to maximum.
+    sendCommand("TLCMAX");
+    std::cout << "[STM32-RHS2116] Command sent: TLCMAX (all TLC LEDs -> max)\n";
+}
+
+void IntanRHS2116::setTlcAllOnPwm(int pwm) {
+    // Clamp pwm to 0-255 to be safe, then send the TLCPWM:<value> command.
+    int v = pwm;
+    if (v < 0) v = 0;
+    if (v > 255) v = 255;
+    sendCommand(std::string("TLCPWM:") + std::to_string(v));
+    std::cout << "[STM32-RHS2116] Command sent: TLCPWM with value " << v << "\n";
+}
+
+// ====== Public API: Optical stimulation ==================================
+void IntanRHS2116::setOpticClk(uint16_t clk) {
+    // 16-bit clock value for optical stim timing
+    sendCommand(std::string("OPTCLK:") + std::to_string(static_cast<int>(clk)));
+    std::cout << "[STM32-RHS2116] Command sent: OPTCLK with value " << clk << "\n";
+}
+
+void IntanRHS2116::optic_stim(uint8_t pattern) {
+    // 8-bit pattern: bit0 -> LED1, bit1 -> LED2, ... bit7 -> LED8
+    // Send aggregated pattern as a single byte value to the MCU.
+    sendCommand(std::string("OPTSTIM:") + std::to_string(static_cast<int>(pattern)));
+    std::cout << "[STM32-RHS2116] Command sent: OPTSTIM with pattern 0x" << std::hex << static_cast<int>(pattern) << std::dec << "\n";
+}

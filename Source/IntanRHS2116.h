@@ -55,6 +55,13 @@ public:
     void setDspEnable(bool enable); //ok
     void setDspFrequency(int kFactor); //ok
 
+    // TLC LED controls
+    void setTlcAllOnMax();
+    void setTlcAllOnPwm(int pwm);
+    
+    // Optical stimulation controls
+    void setOpticClk(uint16_t clk);   // 16-bit clock value for optic stim
+    void optic_stim(uint8_t pattern); // send aggregated 8-bit pattern for optic stim
 private:
     ofSerial& serial_;
     static constexpr unsigned int kWriteDelayMs = 100; // inter-command guard time

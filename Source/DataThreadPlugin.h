@@ -83,6 +83,11 @@ public:
     bool setChargeRecoveryEnable(int v);
     bool setChargeRecoveryClk(int v);
     bool setStimulationTimeMs(int v);
+    bool setTlcMaxOn(int v);
+    bool setTlcPwm(int v);
+    bool setStimMode(int v); // 0 = electrical, 1 = optical
+    bool setOpticClk(int v);
+    bool setOpticSequence(const std::vector<uint8_t>& seq);
     struct StimCmd { int mode; int ch1; int ch2; };
     bool setStimSequence(const std::vector<StimCmd>& seq);
 
@@ -260,6 +265,15 @@ private:
     int    crClk_          = 1;
 
     int    stimTimeMs_     = 0;   // 0 = off
+    int    stimMode_       = 0;   // 0 = electrical (default), 1 = optical
+
+    // Optical stimulation settings
+    int    opticClk_       = 0;   // 16-bit clock value
+    std::vector<uint8_t> opticSeq_; // sequence of 8-bit patterns
+
+    // TLC LED control (applied on start)
+    int    tlcMaxOn_       = 0;   // 0 = no, 1 = set all LEDs to max
+    int    tlcPwm_         = 255; // PWM value 0-255
 
     
     static constexpr int kMaxStimSeq = 200;

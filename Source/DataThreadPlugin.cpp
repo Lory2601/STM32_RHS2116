@@ -378,6 +378,18 @@ bool DataThreadPlugin::startAcquisition()
     rhs_->setStateCR(crEnable_);
     rhs_->setNumberOfClkCR(crClk_);
 
+    // TLC LED settings (apply stored preset values)
+    if (tlcMaxOn_ == 1) {
+        rhs_->setTlcAllOnMax();
+    }
+    else {
+        // set PWM only when not forcing all-on-max
+        rhs_->setTlcAllOnPwm(tlcPwm_);
+    }
+
+    // Optical stim clock: always set the clock register (safe to call)
+    rhs_->setOpticClk(static_cast<uint16_t>(opticClk_));
+
 
     // Configure the device
     rhs_->configure();
@@ -844,6 +856,42 @@ bool DataThreadPlugin::setStimulationTimeMs(int v)
     return true; 
 }
 
+bool DataThreadPlugin::setTlcMaxOn(int v)
+{
+    if (v != 0 && v != 1) return false;
+    tlcMaxOn_ = v;
+    return true;
+}
+
+bool DataThreadPlugin::setTlcPwm(int v)
+{
+    if (v < 0 || v > 255) return false;
+    tlcPwm_ = v;
+    return true;
+}
+
+bool DataThreadPlugin::setStimMode(int v)
+{
+    if (v != 0 && v != 1) return false;
+    stimMode_ = v;
+    return true;
+}
+
+bool DataThreadPlugin::setOpticClk(int v)
+{
+    if (v < 0 || v > 65535) return false;
+    opticClk_ = v;
+    return true;
+}
+
+bool DataThreadPlugin::setOpticSequence(const std::vector<uint8_t>& seq)
+{
+    opticSeq_.clear();
+    opticSeq_.reserve(seq.size());
+    for (auto b : seq) opticSeq_.push_back(b);
+    return true;
+}
+
 bool DataThreadPlugin::setStimSequence(const std::vector<StimCmd>& seq) {
     stimSeq_.clear();
 
@@ -909,14 +957,33 @@ void DataThreadPlugin::presetSequenceThread()
 
             if (stimActive && now >= nextStim)
             {
-                const auto& c = stimSeq_[stimIdx];
-                if (rhs_) rhs_->stim(c.mode, c.ch1, c.ch2);
+                    if (stimMode_ == 0) {
+                        // Electrical stimulation (existing behavior)
+                        const auto& c = stimSeq_[stimIdx];
+                        if (rhs_) rhs_->stim(c.mode, c.ch1, c.ch2);
 
-                ++stimIdx;
-                if (stimIdx >= stimSeq_.size()) {
-                    stimActive = false;
-                } else {
-                    nextStim += std::chrono::milliseconds(stimTimeMs_);
+                        ++stimIdx;
+                        if (stimIdx >= stimSeq_.size()) {
+                            stimActive = false;
+                        } else {
+                            nextStim += std::chrono::milliseconds(stimTimeMs_);
+                        }
+                    }
+                else {
+                    // Optical stimulation: use opticSeq_ (8-bit patterns)
+                    if (!opticSeq_.empty()) {
+                        uint8_t pattern = opticSeq_[stimIdx % opticSeq_.size()];
+                        if (rhs_) rhs_->optic_stim(pattern);
+                        ++stimIdx;
+                        if (stimIdx >= opticSeq_.size()) {
+                            stimActive = false;
+                        } else {
+                            nextStim += std::chrono::milliseconds(stimTimeMs_);
+                        }
+                    } else {
+                        // no optic sequence defined -> disable stimulation
+                        stimActive = false;
+                    }
                 }
             }
 
