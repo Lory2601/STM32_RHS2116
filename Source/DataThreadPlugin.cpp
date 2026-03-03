@@ -355,6 +355,7 @@ bool DataThreadPlugin::startAcquisition()
         return false;
     }
 
+    // Create RHS2116 interface
     rhs_ = std::make_unique<IntanRHS2116>(serial_);
 
 
@@ -401,6 +402,7 @@ bool DataThreadPlugin::startAcquisition()
     serialRunning_.store(true);
     serialThread_ = std::thread(&DataThreadPlugin::serialLoop, this);
 
+    // Start the ENV print thread
     envRunning_.store(true);
     envThread_ = std::thread(&DataThreadPlugin::envPrintLoop, this);
 
@@ -445,6 +447,7 @@ bool DataThreadPlugin::updateBuffer()
         const double ts0_s  = (ticks * TS_TICK_US) * 1e-6;
         const double dt_s   = 1.0 / sampleRateHz_;
 
+        // --- de-interleave and convert to µV ---
         for (int i = 0; i < BLOCK_NSAMP; ++i) {
             const int64 snum = totalSamples_ + i;
             sampleNumbers[static_cast<size_t>(i)] = snum;
@@ -482,7 +485,7 @@ bool DataThreadPlugin::updateBuffer()
             }
         }
 
-        // --- build ENV block with zero-order hold (fill gaps at ~1 Hz) ---
+        // build ENV block with zero-order hold (fill gaps at ~1 Hz)
         static thread_local std::array<float, ENV_NUM_CH * BLOCK_NSAMP> envBlock;
 
         float vT = envTempUV_.load(std::memory_order_relaxed);
@@ -510,7 +513,7 @@ bool DataThreadPlugin::updateBuffer()
         ++drained;
     }
 
-    // --- drain SPAD queue and publish (binary bits -> uV) ---
+    //  SPAD queue and publish (binary bits -> uV) 
     {
         int idx_spad = -1;
         int drained_spad = 0;
@@ -526,12 +529,14 @@ bool DataThreadPlugin::updateBuffer()
             const double ts0_s = (ticks * TS_TICK_US) * 1e-6;
             const double dt_s  = 1.0 / sampleRateHz_;
 
+            // de-interleave and convert to µV
             for (int i = 0; i < SPAD_NSAMP; ++i) {
                 const int64 snum = spadTotalSamples_ + i;
                 sampleNumbersSPAD[static_cast<size_t>(i)] = snum;
                 timestampsSPAD[static_cast<size_t>(i)] = ts0_s + i * dt_s;
                 eventCodesSPAD[static_cast<size_t>(i)] = 0;
 
+                // each byte has 8 bits -> 8 SPAD channels
                 const uint8 v = sb.bytes[TIMESTAMP_BYTES + i];
                 for (int ch = 0; ch < SPAD_NUM_CH; ++ch) {
                     const int bit = (v >> ch) & 1;
@@ -540,6 +545,7 @@ bool DataThreadPlugin::updateBuffer()
                 }
             }
 
+            // publish to DataBuffer
             if (dataBufferSPAD_) dataBufferSPAD_->addToBuffer(samplesSPAD.data(), sampleNumbersSPAD.data(), timestampsSPAD.data(), eventCodesSPAD.data(), SPAD_NSAMP);
             spadTotalSamples_ += SPAD_NSAMP;
             spadQueue_->releaseFree(idx_spad);
@@ -568,13 +574,16 @@ bool DataThreadPlugin::stopAcquisition()
         //rhs_->reset();
     }
 
+    // Stop serial I/O thread
     serialRunning_.store(false);
     if (serialThread_.joinable()) serialThread_.join();
 
+    // Stop DataThread
     if (isThreadRunning())
         signalThreadShouldExit();
     waitForThreadToExit(500);
 
+    // Clear internal buffers
     if (dataBufferAC_ != nullptr)
         dataBufferAC_->clear();
 
@@ -587,6 +596,7 @@ bool DataThreadPlugin::stopAcquisition()
     if (dataBufferSPAD_ != nullptr)
         dataBufferSPAD_->clear();
 
+    // Stop ENV print thread
     envRunning_.store(false);
     if (envThread_.joinable()) envThread_.join();
 
@@ -619,6 +629,7 @@ void DataThreadPlugin::serialLoop()
 
         if (!serialRunning_.load()) break;
 
+        // read EMG block
         if (b == SYNC_BYTE)
         {
             int idx = queue_->acquireFreeBlocking(serialRunning_); if (idx < 0) break;
@@ -629,8 +640,12 @@ void DataThreadPlugin::serialLoop()
                                           static_cast<size_t>(BLOCK_BYTES) - got);
                 if (r > 0) got += static_cast<size_t>(r);
             }
+
+            // push to ready queue
             queue_->pushReady(idx);
         }
+
+        // read ENV block
         else if (b == ENV_SYNC)
         {
             int idx = envQueue_->acquireFreeBlocking(serialRunning_); if (idx < 0) break;
@@ -641,8 +656,12 @@ void DataThreadPlugin::serialLoop()
                                           static_cast<size_t>(ENV_BYTES_AFTER_H) - got);
                 if (r > 0) got += static_cast<size_t>(r);
             }
+
+            // push to ready queue
             envQueue_->pushReady(idx);
         }
+
+        // read SPAD block
         else if (b == SPAD_SYNC)
         {
             int idx = spadQueue_->acquireFreeBlocking(serialRunning_); if (idx < 0) break;
@@ -653,6 +672,8 @@ void DataThreadPlugin::serialLoop()
                                           static_cast<size_t>(SPAD_BYTES_AFTER_H) - got);
                 if (r > 0) got += static_cast<size_t>(r);
             }
+
+            // push to ready queue
             spadQueue_->pushReady(idx);
         }
     }
@@ -661,6 +682,7 @@ void DataThreadPlugin::serialLoop()
 // ==============================================================================================================================
 
 
+// ===================================================== ENV print thread  ======================================================
 void DataThreadPlugin::envPrintLoop()
 {
     int idx = -1;
@@ -698,18 +720,21 @@ void DataThreadPlugin::envPrintLoop()
     }
 }
 
-
+// ==============================================================================================================================
 
 
 
 
 // ================================================= DataThreadPluginEditor impl ================================================
+
+// set serial port
 bool DataThreadPlugin::setSerialPort(const std::string& name)
 {
     serialPort_ = name;
     return true;
 }
 
+// set serial baudrate
 bool DataThreadPlugin::setSampleRate(int hz)
 {
     if (hz <= 0) 
@@ -718,6 +743,7 @@ bool DataThreadPlugin::setSampleRate(int hz)
     return true;
 }
 
+// set lower bandwidth
 bool DataThreadPlugin::setLowerBandwidthHz(double hz)
 {
     if (hz <= 0.0) 
@@ -726,6 +752,7 @@ bool DataThreadPlugin::setLowerBandwidthHz(double hz)
     return true;
 }
 
+// set upper bandwidth
 bool DataThreadPlugin::setUpperBandwidthHz(double hz)
 {
     if (hz <= 0.0) 
@@ -734,12 +761,14 @@ bool DataThreadPlugin::setUpperBandwidthHz(double hz)
     return true;
 }
 
+// set DSP enabled
 bool DataThreadPlugin::setDspEnabled(bool enabled)
 {
     dspEnabled_ = enabled;
     return true;
 }
 
+// set DSP k-factor
 bool DataThreadPlugin::setDspKFactor(int k)
 {
     if (k < 0) 
@@ -748,6 +777,7 @@ bool DataThreadPlugin::setDspKFactor(int k)
     return true;
 }
 
+// set acquisition time in seconds
 bool DataThreadPlugin::setAcquisitionTimeSeconds(int seconds)
 {
     if (seconds < 0) 
@@ -756,18 +786,21 @@ bool DataThreadPlugin::setAcquisitionTimeSeconds(int seconds)
     return true;
 }
 
+// set stimulation enabled
 bool DataThreadPlugin::setStimEnabled(bool v)
 { 
     stimEnabled_ = v; 
     return true; 
 }
 
+// set stimulation voltage
 bool DataThreadPlugin::setStimVoltage(double v)          
 { 
     stimVoltageV_ = v; 
     return true; 
 }
 
+// set stimulation step size
 bool DataThreadPlugin::setStimStepNa(int v)              
 { 
     if (v<=0) 
@@ -776,6 +809,7 @@ bool DataThreadPlugin::setStimStepNa(int v)
     return true; 
 }
 
+// set positive stimulation current
 bool DataThreadPlugin::setStimPosCurrent(int v)          
 { 
     if (v<1||v>255) 
@@ -784,6 +818,7 @@ bool DataThreadPlugin::setStimPosCurrent(int v)
     return true; 
 }
 
+// set negative stimulation current
 bool DataThreadPlugin::setStimNegCurrent(int v)          
 { 
     if (v<1||v>255) 
@@ -792,6 +827,7 @@ bool DataThreadPlugin::setStimNegCurrent(int v)
     return true; 
 }
 
+// set stimulation type
 bool DataThreadPlugin::setStimType(int v)                
 { 
     if (v<0||v>1) 
@@ -800,6 +836,7 @@ bool DataThreadPlugin::setStimType(int v)
     return true; 
 }
 
+// set stimulation polarity
 bool DataThreadPlugin::setStimPolarity(int v)            
 { 
     if (v<0||v>1) 
@@ -808,6 +845,7 @@ bool DataThreadPlugin::setStimPolarity(int v)
     return true; 
 }
 
+// set number of positive stimulation clocks
 bool DataThreadPlugin::setStimClkPos(int v)              
 { 
     if (v<0) 
@@ -816,6 +854,7 @@ bool DataThreadPlugin::setStimClkPos(int v)
     return true; 
 }
 
+// set number of negative stimulation clocks
 bool DataThreadPlugin::setStimClkNeg(int v)              
 { 
     if (v<0) 
@@ -824,6 +863,7 @@ bool DataThreadPlugin::setStimClkNeg(int v)
     return true; 
 }
 
+// set continuous stimulation
 bool DataThreadPlugin::setStimContinuous(int v)          
 { 
     if (v<0||v>1) 
@@ -832,6 +872,7 @@ bool DataThreadPlugin::setStimContinuous(int v)
     return true; 
 }
 
+// set charge recovery enabled
 bool DataThreadPlugin::setChargeRecoveryEnable(int v)    
 { 
     if (v<0||v>1) 
@@ -840,6 +881,7 @@ bool DataThreadPlugin::setChargeRecoveryEnable(int v)
     return true; 
 }
 
+// set charge recovery clocks
 bool DataThreadPlugin::setChargeRecoveryClk(int v)       
 { 
     if (v<0) 
@@ -848,6 +890,7 @@ bool DataThreadPlugin::setChargeRecoveryClk(int v)
     return true; 
 }
 
+// set delay after stimulation in seconds
 bool DataThreadPlugin::setStimulationTimeMs(int v)       
 { 
     if (v<0) 
@@ -856,6 +899,7 @@ bool DataThreadPlugin::setStimulationTimeMs(int v)
     return true; 
 }
 
+// set delay after stimulation in seconds
 bool DataThreadPlugin::setTlcMaxOn(int v)
 {
     if (v != 0 && v != 1) return false;
@@ -863,6 +907,7 @@ bool DataThreadPlugin::setTlcMaxOn(int v)
     return true;
 }
 
+// set TLC PWM value
 bool DataThreadPlugin::setTlcPwm(int v)
 {
     if (v < 0 || v > 255) return false;
@@ -870,6 +915,7 @@ bool DataThreadPlugin::setTlcPwm(int v)
     return true;
 }
 
+// set delay after stimulation in seconds
 bool DataThreadPlugin::setStimMode(int v)
 {
     if (v != 0 && v != 1) return false;
@@ -877,6 +923,7 @@ bool DataThreadPlugin::setStimMode(int v)
     return true;
 }
 
+// set optical stimulation clock
 bool DataThreadPlugin::setOpticClk(int v)
 {
     if (v < 0 || v > 65535) return false;
@@ -884,6 +931,7 @@ bool DataThreadPlugin::setOpticClk(int v)
     return true;
 }
 
+// set delay after stimulation in seconds
 bool DataThreadPlugin::setOpticSequence(const std::vector<uint8_t>& seq)
 {
     opticSeq_.clear();
@@ -892,6 +940,7 @@ bool DataThreadPlugin::setOpticSequence(const std::vector<uint8_t>& seq)
     return true;
 }
 
+// set stimulation sequence
 bool DataThreadPlugin::setStimSequence(const std::vector<StimCmd>& seq) {
     stimSeq_.clear();
 
@@ -907,8 +956,7 @@ bool DataThreadPlugin::setStimSequence(const std::vector<StimCmd>& seq) {
     return true;
 }
 
-
-
+// set delay after stimulation in seconds
 bool DataThreadPlugin::setPresetFolderPath(const std::string& path)
 {
     if (!path.empty() && !fs::is_directory(fs::u8path(path)))
@@ -918,8 +966,17 @@ bool DataThreadPlugin::setPresetFolderPath(const std::string& path)
     return true;
 }
 
+// start preset sequence
 bool DataThreadPlugin::startSequence()
 {
+    // if a previous thread object exists, make sure it has finished and been joined
+    if (sequenceThread_.joinable()) {
+        // this can happen when the previous preset run reaches the end naturally
+        // the thread() object is still joinable even though it has completed.
+        // assigning to it without joining would call its destructor and terminate.
+        sequenceThread_.join();
+    }
+
     if (sequenceRunning_.exchange(true)) return false;         // already running
     if (!prepareSequenceHeader()) { sequenceRunning_.store(false); return false; }
     std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -927,6 +984,7 @@ bool DataThreadPlugin::startSequence()
     return true;
 }
 
+// preset sequence thread
 void DataThreadPlugin::presetSequenceThread()
 {
     for (int i = 0; i < gSeqCount && sequenceRunning_.load(); ++i)
@@ -999,9 +1057,7 @@ void DataThreadPlugin::presetSequenceThread()
     sequenceRunning_.store(false);
 }
 
-
-
-
+// stop preset sequence
 bool DataThreadPlugin::stopSequence()
 {
     sequenceRunning_.store(false);
@@ -1010,8 +1066,6 @@ bool DataThreadPlugin::stopSequence()
     CoreServices::setAcquisitionStatus(false);
     return true;
 }
-
-
 
 // ==============================================================================================================================
 

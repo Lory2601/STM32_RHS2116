@@ -94,25 +94,26 @@ public:
 
 private:
     // ===================== Hardware / packet layout =========================
-    static constexpr double FS_HZ           = 30000.0;  // device sampling rate (Hz)
-    static constexpr int    BLOCK_NSAMP     = 100;      // samples per device packet
-    static constexpr int    TOTAL_HW_CH     = 40;       // 40 × 16-bit channels per sample
-    static constexpr int    TIMESTAMP_BYTES = 4;        // u32 little-endian
-    static constexpr int    PAYLOAD_BYTES   = 8000;     // 100 * 40 * 2
-    static constexpr int    BLOCK_BYTES     = TIMESTAMP_BYTES + PAYLOAD_BYTES; // 8004 (no sync)
-    static constexpr uint8  SYNC_BYTE       = 0xAA;     // start-of-packet marker
-    static constexpr double TS_TICK_US      = 100.0;    // device timestamp resolution (100 us)
-    static constexpr int MAX_DRAIN_PER_CALL = 8; // parse/push up to N raw blocks per updateBuffer()
-    static constexpr int N_BLOCKS = 256;         // pool size for raw blocks
+    static constexpr double FS_HZ           = 30000.0;                          // device sampling rate (Hz)
+    static constexpr int    BLOCK_NSAMP     = 200;                              // samples per device packet
+    static constexpr int    TOTAL_HW_CH     = 40;                               // 40 × 16-bit channels per sample
+    static constexpr int    TIMESTAMP_BYTES = 4;                                // u32 little-endian
+    static constexpr int    PAYLOAD_BYTES   = BLOCK_NSAMP*TOTAL_HW_CH*2;        // 100 * 40 * 2
+    static constexpr int    BLOCK_BYTES     = TIMESTAMP_BYTES + PAYLOAD_BYTES;  // 8004 (no sync)
+    static constexpr uint8  SYNC_BYTE       = 0xAA;                             // start-of-packet marker
+    static constexpr double TS_TICK_US      = 100.0;                            // device timestamp resolution (100 us)
+    static constexpr int MAX_DRAIN_PER_CALL = 8;                                // parse/push up to N raw blocks per updateBuffer()
+    static constexpr int N_BLOCKS = 256;                                        // pool size for raw blocks
 
+    // ENV
     static constexpr uint8 ENV_SYNC          = 0xDD;
-    static constexpr int   ENV_BYTES_AFTER_H = 6;    // 4B tsLE32 + 1B T(int8) + 1B RH(int8)
-    static constexpr int   N_ENV_BLOCKS      = 512;  // pool size
+    static constexpr int   ENV_BYTES_AFTER_H = 6;                               // 4B tsLE32 + 1B T(int8) + 1B RH(int8)
+    static constexpr int   N_ENV_BLOCKS      = 512;                             // pool size
     
-    // SPAD (synchronous parallel activity detection)
+    // SPAD
     static constexpr uint8 SPAD_SYNC         = 0xEE;
-    static constexpr int   SPAD_NSAMP        = 1000; // samples per SPAD packet
-    static constexpr int   SPAD_BYTES_AFTER_H = TIMESTAMP_BYTES + SPAD_NSAMP; // 4 + 1000
+    static constexpr int   SPAD_NSAMP        = 1000;                            // samples per SPAD packet
+    static constexpr int   SPAD_BYTES_AFTER_H = TIMESTAMP_BYTES + SPAD_NSAMP;   // 4 + 1000
     static constexpr int   N_SPAD_BLOCKS     = 256;
 
 
@@ -256,31 +257,31 @@ private:
     int    stimStepNa_     = 10;
     int    stimPosCurrent_ = 128;
     int    stimNegCurrent_ = 128;
-    int    stimType_       = 0;   // 0/1
-    int    stimPolarity_   = 1;   // 0/1
+    int    stimType_       = 0;     // 0/1
+    int    stimPolarity_   = 1;     // 0/1
     int    stimClkPos_     = 6;
     int    stimClkNeg_     = 6;
-    int    stimContinuous_ = 0;   // 0/1
-    int    crEnable_       = 0;   // 0/1
+    int    stimContinuous_ = 0;     // 0/1
+    int    crEnable_       = 0;     // 0/1
     int    crClk_          = 1;
 
-    int    stimTimeMs_     = 0;   // 0 = off
-    int    stimMode_       = 0;   // 0 = electrical (default), 1 = optical
+    int    stimTimeMs_     = 0;     // 0 = off
+    int    stimMode_       = 0;     // 0 = electrical (default), 1 = optical
 
     // Optical stimulation settings
-    int    opticClk_       = 0;   // 16-bit clock value
+    int    opticClk_       = 0;     // 16-bit clock value
     std::vector<uint8_t> opticSeq_; // sequence of 8-bit patterns
 
     // TLC LED control (applied on start)
-    int    tlcMaxOn_       = 0;   // 0 = no, 1 = set all LEDs to max
-    int    tlcPwm_         = 255; // PWM value 0-255
+    int    tlcMaxOn_       = 0;     // 0 = no, 1 = set all LEDs to max
+    int    tlcPwm_         = 255;   // PWM value 0-255
 
     
     static constexpr int kMaxStimSeq = 200;
     std::vector<StimCmd> stimSeq_;   // bounded to kMaxStimSeq
     size_t stimSeqIdx_ = 0;
 
-    int delayAfterStim_sec_ = 5; // wait N seconds after stim sequence ends
+    int delayAfterStim_sec_ = 5;     // wait N seconds after stim sequence ends
 
 
     int  acquisitionTimeSec_ = 0;

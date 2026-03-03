@@ -27,9 +27,9 @@ public:
     explicit IntanRHS2116(ofSerial& serial);
 
     // Configuration commands
-    void setSampleRate(int sampleRate); //ok
-    void setLowerBandwidth(double lowerBandwidthHz); //ok
-    void setUpperBandwidth(double upperBandwidthHz); //ok
+    void setSampleRate(int sampleRate);
+    void setLowerBandwidth(double lowerBandwidthHz);
+    void setUpperBandwidth(double upperBandwidthHz);
     void configure();
 
     // Acquisition control
@@ -38,30 +38,30 @@ public:
     void reset();
 
     // Stimulation-related commands
-    void stim(int mode, int channel1, int channel2); //ok
-    void setNumberOfClkNeg(int clkNeg); //ok
-    void setNumberOfClkPos(int clkPos); //ok
-    void setStimPolarity(int stimPol); //ok
-    void setStimType(int stimType); //ok
-    void setVoltage(double voltage); //ok
-    void setStepSize(int stepSizeNa); //ok
-    void setNegStimCurrent(int negStimCurrent); //ok
-    void setPosStimCurrent(int posStimCurrent); //ok
-    void setContinuousStim(int mode); //ok
-    void setNumberOfClkCR(int clkCR); //ok
-    void setStateCR(int stateCR); //ok
+    void stim(int mode, int channel1, int channel2); 
+    void setNumberOfClkNeg(int clkNeg); 
+    void setNumberOfClkPos(int clkPos); 
+    void setStimPolarity(int stimPol); 
+    void setStimType(int stimType); 
+    void setVoltage(double voltage); 
+    void setStepSize(int stepSizeNa); 
+    void setNegStimCurrent(int negStimCurrent); 
+    void setPosStimCurrent(int posStimCurrent); 
+    void setContinuousStim(int mode); 
+    void setNumberOfClkCR(int clkCR); 
+    void setStateCR(int stateCR); 
 
     // DSP controls
-    void setDspEnable(bool enable); //ok
-    void setDspFrequency(int kFactor); //ok
+    void setDspEnable(bool enable); 
+    void setDspFrequency(int kFactor); 
 
     // TLC LED controls
     void setTlcAllOnMax();
     void setTlcAllOnPwm(int pwm);
     
     // Optical stimulation controls
-    void setOpticClk(uint16_t clk);   // 16-bit clock value for optic stim
-    void optic_stim(uint8_t pattern); // send aggregated 8-bit pattern for optic stim
+    void setOpticClk(uint16_t clk);   
+    void optic_stim(uint8_t pattern); 
 private:
     ofSerial& serial_;
     static constexpr unsigned int kWriteDelayMs = 100; // inter-command guard time

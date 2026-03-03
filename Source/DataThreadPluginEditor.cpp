@@ -49,8 +49,10 @@ DataThreadPluginEditor::DataThreadPluginEditor (GenericProcessor* parentNode, Da
         }
     };
 
+    // Add to editor
     addAndMakeVisible(comBox);
 
+    // When selection changes, pass the selected port to the thread
     comBox.onChange = [this]()
     {
         auto selected = comBox.getText();
@@ -79,8 +81,10 @@ DataThreadPluginEditor::DataThreadPluginEditor (GenericProcessor* parentNode, Da
     }
     sampleRateBox.setSelectedId(1000, juce::dontSendNotification);
 
+    // Add to editor
     addAndMakeVisible(sampleRateBox);
 
+    // When selection changes, parse the text as int and pass it to the thread
     sampleRateBox.onChange = [this]()
     {
         int selected = sampleRateBox.getText().getIntValue();
@@ -125,8 +129,11 @@ DataThreadPluginEditor::DataThreadPluginEditor (GenericProcessor* parentNode, Da
         for (const char* v : LOWER_BW_VALUES)
             lowerBwBox.addItem(juce::String(v), id++);
     }
+
+    // Add to editor
     addAndMakeVisible(lowerBwBox);
 
+    // When selection changes, parse the text as double and pass it to the thread
     lowerBwBox.onChange = [this]()
     {
         const double hz = lowerBwBox.getText().getDoubleValue();
@@ -164,9 +171,11 @@ DataThreadPluginEditor::DataThreadPluginEditor (GenericProcessor* parentNode, Da
         for (const char* v : UPPER_BW_VALUES)
             upperBwBox.addItem(juce::String(v), id++);
     }
+
+    // Add to editor
     addAndMakeVisible(upperBwBox);
 
-    // When selection changes, parse the text as double and (optionally) pass it to the thread
+    // When selection changes, parse the text as double and pass it to the thread
     upperBwBox.onChange = [this]()
     {
         const double hz = upperBwBox.getText().getDoubleValue();
@@ -199,8 +208,10 @@ DataThreadPluginEditor::DataThreadPluginEditor (GenericProcessor* parentNode, Da
     // Arancione quando abilitato
     dspEnableButton.setColour(juce::TextButton::buttonOnColourId, juce::Colours::orange);
 
+    // Add to editor
     addAndMakeVisible(dspEnableButton);
 
+    // When clicked, pass the new state to the thread
     dspEnableButton.onClick = [this]()
     {
         const bool enabled = dspEnableButton.getToggleState();
@@ -255,17 +266,22 @@ DataThreadPluginEditor::DataThreadPluginEditor (GenericProcessor* parentNode, Da
 
     //--------------------------------------------------- preset folder --------------------------------------------
 
+    // Label
     presetFolderLabel.setText("Load preset folder:", juce::dontSendNotification);
     presetFolderLabel.setFont(juce::Font(12.0f));
     presetFolderLabel.setJustificationType(juce::Justification::centredLeft);
+    // Add to editor
     addAndMakeVisible(presetFolderLabel);
 
+    // Button to open a folder chooser
     presetFolderBox.setButtonText("Select");
     presetFolderBox.setColour(juce::TextButton::buttonColourId, juce::Colours::lightgrey);
     presetFolderBox.setColour(juce::TextButton::textColourOffId, juce::Colours::black);
     presetFolderBox.setTriggeredOnMouseDown(false);
+    // Add to editor
     addAndMakeVisible(presetFolderBox);
 
+    // When clicked, open a folder chooser dialog
     presetFolderBox.onClick = [this]()
     {
         juce::File startDir = presetBaseDir.exists() ? presetBaseDir
@@ -291,11 +307,14 @@ DataThreadPluginEditor::DataThreadPluginEditor (GenericProcessor* parentNode, Da
     //--------------------------------------------------------------------------------------------------------------
 
     // ----------------------------------------------- start sequence -------------------------------------------------
+    // Label
     startSeqLabel.setText("Start sequence:", juce::dontSendNotification);
     startSeqLabel.setFont(juce::Font(12.0f));
     startSeqLabel.setJustificationType(juce::Justification::centredLeft);
+    // Add to editor
     addAndMakeVisible(startSeqLabel);
 
+    // Button to start/stop the sequence
     startSeqButton.setButtonText("START");
     startSeqButton.setClickingTogglesState(true);
 
@@ -305,8 +324,10 @@ DataThreadPluginEditor::DataThreadPluginEditor (GenericProcessor* parentNode, Da
     startSeqButton.setColour(juce::TextButton::textColourOffId, juce::Colours::black);
     startSeqButton.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
 
+    // Add to editor
     addAndMakeVisible(startSeqButton);
 
+    // When clicked, start/stop the sequence in the thread
     startSeqButton.onClick = [this]()
     {
         if (startSeqButton.getToggleState())
@@ -329,12 +350,14 @@ DataThreadPluginEditor::DataThreadPluginEditor (GenericProcessor* parentNode, Da
     // ------------------------ Sync plugin with GUI defaults (avoid any mismatch at startup) -----------------------
     if (thread != nullptr)
     {
+        // Read current GUI values
         const int    fs     = sampleRateBox.getText().getIntValue();
         const double lbwHz  = lowerBwBox.getText().getDoubleValue();
         const double ubwHz  = upperBwBox.getText().getDoubleValue();
         const bool   dspOn  = dspEnableButton.getToggleState();
         const int N_as_K = dspFreqBox.getSelectedId();
 
+        // Apply to thread
         thread->setSampleRate(fs);
         thread->setLowerBandwidthHz(lbwHz);
         thread->setUpperBandwidthHz(ubwHz);
@@ -396,6 +419,7 @@ void DataThreadPluginEditor::rebuildDspFreqItems (int fsample)
     // Rebuild the dropdown with frequencies -> kfreq * fsample.
     dspFreqBox.clear(juce::dontSendNotification);
 
+    // Helper to format frequency
     auto fmtHz = [] (double f) -> juce::String
     {
         if      (f < 10.0)  return juce::String(f, 3);
@@ -403,6 +427,7 @@ void DataThreadPluginEditor::rebuildDspFreqItems (int fsample)
         else                return juce::String(f, 0);
     };
 
+    // Populate
     for (int N = 1; N <= 15; ++N)
     {
         const double k  = DSP_K_TABLE[N];

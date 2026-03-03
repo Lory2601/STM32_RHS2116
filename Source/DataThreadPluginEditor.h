@@ -113,12 +113,12 @@ private:
     juce::Label   dspFreqLabel;
     juce::ComboBox dspFreqBox;
 
-    // --- Preset folder UI ---
+    // Preset folder UI
     juce::Label     presetFolderLabel;
     juce::TextButton presetFolderBox;  
     juce::File      presetBaseDir;    
     
-    // --- Start sequence ---
+    // Start sequence
     juce::Label      startSeqLabel;
     juce::TextButton startSeqButton;
 
