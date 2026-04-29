@@ -41,6 +41,101 @@ static juce::File gSeqFile;
 static juce::var  gSeq; // array of preset filenames
 static int        gSeqCount = 0;
 
+// =================================================== Command line parser ======================================================
+static String handleRhsCommand (IntanRHS2116* rhs, const String& msg)
+{
+    String cleanMsg = msg.trim();
+    cleanMsg = cleanMsg.replaceCharacter (':', ' ');
+    cleanMsg = cleanMsg.replaceCharacter (',', ' ');
+
+    StringArray args;
+    args.addTokens (cleanMsg, " \t\r\n", "");
+    args.removeEmptyStrings();
+
+    if (args.size() == 0)
+        return "";
+
+    const String cmd = args[0].toUpperCase();
+
+    auto hasArgs = [&args](int n) { return args.size() == n + 1; };
+    auto intArg  = [&args](int i) { return args[i].getIntValue(); };
+    auto dblArg  = [&args](int i) { return args[i].getDoubleValue(); };
+
+    const bool knownCommand = (cmd == "SAMPLERATE" || cmd == "LOWERBANDWIDTH" || cmd == "UPPERBANDWIDTH"
+                               || cmd == "CONFIG" || cmd == "START" || cmd == "STOP" || cmd == "RESET"
+                               || cmd == "STIM" || cmd == "CLK_NEG" || cmd == "CLK_POS" || cmd == "STIM_POL"
+                               || cmd == "STIM_TYPE" || cmd == "VOLTAGE" || cmd == "STEP_SIZE"
+                               || cmd == "NEG_CURRENT" || cmd == "POS_CURRENT" || cmd == "CONTINOUS_STIM"
+                               || cmd == "CONTINUOUS_STIM" || cmd == "CLK_CR" || cmd == "STATE_CR"
+                               || cmd == "DSP_EN" || cmd == "DSP_FREQ" || cmd == "TLCMAX" || cmd == "TLCPWM"
+                               || cmd == "OPTCLK" || cmd == "OPTSTIM");
+
+    if (! knownCommand)
+        return "";
+
+    if (rhs == nullptr)
+        return "ERR: device not initialized";
+
+    // Configuration commands
+    if (cmd == "SAMPLERATE" && hasArgs (1))        { rhs->setSampleRate (intArg (1));       return "OK: SAMPLERATE sent"; }
+    if (cmd == "LOWERBANDWIDTH" && hasArgs (1))    { rhs->setLowerBandwidth (dblArg (1));   return "OK: LOWERBANDWIDTH sent"; }
+    if (cmd == "UPPERBANDWIDTH" && hasArgs (1))    { rhs->setUpperBandwidth (dblArg (1));   return "OK: UPPERBANDWIDTH sent"; }
+    if (cmd == "CONFIG" && hasArgs (0))            { rhs->configure();                      return "OK: CONFIG sent"; }
+
+    // Acquisition control
+    if (cmd == "START" && hasArgs (0))             { rhs->startAcquisition();               return "OK: START sent"; }
+    if (cmd == "STOP" && hasArgs (0))              { rhs->stopAcquisition();                return "OK: STOP sent"; }
+    if (cmd == "RESET" && hasArgs (0))             { rhs->reset();                          return "OK: RESET sent"; }
+
+    // Stimulation-related commands
+    if (cmd == "STIM" && hasArgs (3))              { rhs->stim (intArg (1), intArg (2), intArg (3)); return "OK: STIM sent"; }
+    if (cmd == "CLK_NEG" && hasArgs (1))           { rhs->setNumberOfClkNeg (intArg (1));   return "OK: CLK_NEG sent"; }
+    if (cmd == "CLK_POS" && hasArgs (1))           { rhs->setNumberOfClkPos (intArg (1));   return "OK: CLK_POS sent"; }
+    if (cmd == "STIM_POL" && hasArgs (1))          { rhs->setStimPolarity (intArg (1));     return "OK: STIM_POL sent"; }
+    if (cmd == "STIM_TYPE" && hasArgs (1))         { rhs->setStimType (intArg (1));         return "OK: STIM_TYPE sent"; }
+    if (cmd == "VOLTAGE" && hasArgs (1))           { rhs->setVoltage (dblArg (1));          return "OK: VOLTAGE sent"; }
+    if (cmd == "STEP_SIZE" && hasArgs (1))         { rhs->setStepSize (intArg (1));         return "OK: STEP_SIZE sent"; }
+    if (cmd == "NEG_CURRENT" && hasArgs (1))       { rhs->setNegStimCurrent (intArg (1));   return "OK: NEG_CURRENT sent"; }
+    if (cmd == "POS_CURRENT" && hasArgs (1))       { rhs->setPosStimCurrent (intArg (1));   return "OK: POS_CURRENT sent"; }
+    if ((cmd == "CONTINOUS_STIM" || cmd == "CONTINUOUS_STIM") && hasArgs (1))
+                                                     { rhs->setContinuousStim (intArg (1)); return "OK: CONTINOUS_STIM sent"; }
+    if (cmd == "CLK_CR" && hasArgs (1))            { rhs->setNumberOfClkCR (intArg (1));    return "OK: CLK_CR sent"; }
+    if (cmd == "STATE_CR" && hasArgs (1))          { rhs->setStateCR (intArg (1));          return "OK: STATE_CR sent"; }
+
+    // DSP controls
+    if (cmd == "DSP_EN" && hasArgs (1))            { rhs->setDspEnable (intArg (1) != 0);   return "OK: DSP_EN sent"; }
+    if (cmd == "DSP_FREQ" && hasArgs (1))          { rhs->setDspFrequency (intArg (1));     return "OK: DSP_FREQ sent"; }
+
+    // TLC LED controls
+    if (cmd == "TLCMAX" && hasArgs (0))            { rhs->setTlcAllOnMax();                 return "OK: TLCMAX sent"; }
+    if (cmd == "TLCPWM" && hasArgs (1))
+    {
+        const int pwm = intArg (1);
+        if (pwm < 0 || pwm > 255) return "ERR: TLCPWM range is 0-255";
+        rhs->setTlcAllOnPwm (pwm);
+        return "OK: TLCPWM sent";
+    }
+
+    // Optical stimulation controls
+    if (cmd == "OPTCLK" && hasArgs (1))
+    {
+        const int clk = intArg (1);
+        if (clk < 0 || clk > 65535) return "ERR: OPTCLK range is 0-65535";
+        rhs->setOpticClk (static_cast<uint16_t> (clk));
+        return "OK: OPTCLK sent";
+    }
+
+    if (cmd == "OPTSTIM" && hasArgs (1))
+    {
+        const int pattern = intArg (1);
+        if (pattern < 0 || pattern > 255) return "ERR: OPTSTIM range is 0-255";
+        rhs->optic_stim (static_cast<uint8_t> (pattern));
+        return "OK: OPTSTIM sent";
+    }
+
+    return "";
+}
+
 // =================================================== PacketPoolQueue impl =====================================================
 DataThreadPlugin::PacketPoolQueue::PacketPoolQueue(int n)
 : storage_(static_cast<size_t>(n))
@@ -994,7 +1089,12 @@ void DataThreadPlugin::presetSequenceThread()
         CoreServices::setRecordingStatus(true);
 
         const int secs = acquisitionTimeSec_;
-        bool stimActive = (stimEnabled_ && stimTimeMs_ > 0 && !stimSeq_.empty());
+        const bool hasElectricalSequence = !stimSeq_.empty();
+        const bool hasOpticalSequence    = !opticSeq_.empty();
+        bool stimActive = (stimEnabled_
+                           && stimTimeMs_ > 0
+                           && ((stimMode_ == 0 && hasElectricalSequence)
+                               || (stimMode_ != 0 && hasOpticalSequence)));
         size_t stimIdx = 0;
 
         auto t0 = std::chrono::steady_clock::now();
@@ -1152,8 +1252,15 @@ std::unique_ptr<GenericEditor> DataThreadPlugin::createEditor (SourceNode* sn)
     return editor;
 }
 
-void DataThreadPlugin::handleBroadcastMessage (const String& /*msg*/, const int64 /*messageTimeMilliseconds*/) {}
-String DataThreadPlugin::handleConfigMessage (const String& /*msg*/) { return ""; }
+void DataThreadPlugin::handleBroadcastMessage (const String& msg, const int64 /*messageTimeMilliseconds*/)
+{
+    handleRhsCommand (rhs_.get(), msg);
+}
+
+String DataThreadPlugin::handleConfigMessage (const String& msg)
+{
+    return handleRhsCommand (rhs_.get(), msg);
+}
 void DataThreadPlugin::registerParameters() {}
 void DataThreadPlugin::parameterValueChanged (Parameter* /*parameter*/) {}
 // ==============================================================================================================================
