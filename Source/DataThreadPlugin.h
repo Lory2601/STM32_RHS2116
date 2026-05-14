@@ -83,6 +83,7 @@ public:
     bool setChargeRecoveryEnable(int v);
     bool setChargeRecoveryClk(int v);
     bool setStimulationTimeMs(int v);
+    bool setStimSequenceRepeatMs(int v);
     bool setTlcMaxOn(int v);
     bool setTlcPwm(int v);
     bool setStimMode(int v); // 0 = electrical, 1 = optical
@@ -266,6 +267,7 @@ private:
     int    crClk_          = 1;
 
     int    stimTimeMs_     = 0;     // 0 = off
+    int    stimSequenceRepeatMs_ = 0; // 0 = run the sequence once
     int    stimMode_       = 0;     // 0 = electrical (default), 1 = optical
 
     // Optical stimulation settings

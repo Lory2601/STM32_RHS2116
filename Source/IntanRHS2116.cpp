@@ -45,6 +45,31 @@ bool IntanRHS2116::sendCommand(const std::string& command) {
     return true;
 }
 
+// ====== Private: sendStimCommand ===========================================
+bool IntanRHS2116::sendStimCommand(const std::string& command) {
+    if (!serial_.isInitialized()) {
+        std::cerr << "[IntanRHS2116] ERROR: ofSerial is not initialized/open.\n";
+        return false;
+    }
+
+    const std::string cmd = withNewline(command);
+
+    const long written = serial_.writeData(cmd);
+    if (written < 0 || static_cast<size_t>(written) != cmd.size()) {
+        std::cerr << "[IntanRHS2116] ERROR: Failed to write full command. "
+                  << "Written=" << written << " / " << cmd.size()
+                  << " | Cmd=\"";
+        for (char c : cmd) {
+            if (c == '\n') std::cerr << "\\n";
+            else std::cerr << c;
+        }
+        std::cerr << "\"\n";
+        return false;
+    }
+
+    return true;
+}
+
 // ====== Public API: configuration ==========================================
 
 // set sample rate
@@ -97,9 +122,9 @@ void IntanRHS2116::reset() {
 
 // set stimulation parameters
 void IntanRHS2116::stim(int mode, int channel1, int channel2) {
-    sendCommand("STIM:" + std::to_string(mode) + "," +
-                std::to_string(channel1) + "," +
-                std::to_string(channel2));
+    sendStimCommand("STIM:" + std::to_string(mode) + "," +
+                    std::to_string(channel1) + "," +
+                    std::to_string(channel2));
     std::cout << "[STM32-RHS2116] Command sent: STIM with mode " << mode
               << ", channel1 " << channel1
               << ", channel2 " << channel2 << "\n";
@@ -216,6 +241,6 @@ void IntanRHS2116::setOpticClk(uint16_t clk) {
 void IntanRHS2116::optic_stim(uint8_t pattern) {
     // 8-bit pattern: bit0 -> LED1, bit1 -> LED2, ... bit7 -> LED8
     // Send aggregated pattern as a single byte value to the MCU.
-    sendCommand(std::string("OPTSTIM:") + std::to_string(static_cast<int>(pattern)));
+    sendStimCommand(std::string("OPTSTIM:") + std::to_string(static_cast<int>(pattern)));
     std::cout << "[STM32-RHS2116] Command sent: OPTSTIM with pattern 0x" << std::hex << static_cast<int>(pattern) << std::dec << "\n";
 }

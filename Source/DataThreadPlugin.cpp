@@ -994,6 +994,14 @@ bool DataThreadPlugin::setStimulationTimeMs(int v)
     return true; 
 }
 
+bool DataThreadPlugin::setStimSequenceRepeatMs(int v)
+{
+    if (v < 0)
+        return false;
+    stimSequenceRepeatMs_ = v;
+    return true;
+}
+
 // set delay after stimulation in seconds
 bool DataThreadPlugin::setTlcMaxOn(int v)
 {
@@ -1091,14 +1099,19 @@ void DataThreadPlugin::presetSequenceThread()
         const int secs = acquisitionTimeSec_;
         const bool hasElectricalSequence = !stimSeq_.empty();
         const bool hasOpticalSequence    = !opticSeq_.empty();
-        bool stimActive = (stimEnabled_
-                           && stimTimeMs_ > 0
-                           && ((stimMode_ == 0 && hasElectricalSequence)
-                               || (stimMode_ != 0 && hasOpticalSequence)));
+        const bool canStim = (stimEnabled_
+                              && stimTimeMs_ > 0
+                              && ((stimMode_ == 0 && hasElectricalSequence)
+                                  || (stimMode_ != 0 && hasOpticalSequence)));
+        bool stimActive = canStim;
         size_t stimIdx = 0;
 
         auto t0 = std::chrono::steady_clock::now();
         auto nextStim = t0 + std::chrono::milliseconds(stimTimeMs_);
+        const bool repeatSequence = (stimSequenceRepeatMs_ > 0);
+        std::chrono::steady_clock::time_point nextRepeat = (std::chrono::steady_clock::time_point::max)();
+        if (repeatSequence)
+            nextRepeat = t0 + std::chrono::milliseconds(stimSequenceRepeatMs_);
 
         int printed = 0;
         while (sequenceRunning_.load())
@@ -1106,6 +1119,17 @@ void DataThreadPlugin::presetSequenceThread()
             auto now = std::chrono::steady_clock::now();
             auto elapsed_s = std::chrono::duration_cast<std::chrono::seconds>(now - t0).count();
             if (secs > 0 && elapsed_s >= secs) break;
+
+            if (repeatSequence && canStim && now >= nextRepeat)
+            {
+                do {
+                    nextRepeat += std::chrono::milliseconds(stimSequenceRepeatMs_);
+                } while (now >= nextRepeat);
+
+                stimIdx = 0;
+                stimActive = true;
+                nextStim = now + std::chrono::milliseconds(stimTimeMs_);
+            }
 
             if (elapsed_s > printed) {
                 printed = (int)elapsed_s;

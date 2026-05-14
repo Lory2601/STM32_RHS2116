@@ -517,6 +517,7 @@ bool DataThreadPluginEditor::applyPresetObject (const juce::var& root)
     int cr_enable        = 0;
     int cr_clk           = 0;
     int stim_time_ms     = 0;
+    int stim_sequence_repeat_ms = 0;
     int tlc_max_on      = 0;
     int tlc_pwm         = 255;
     int electrical_or_optic_stim       = 0;
@@ -542,6 +543,7 @@ bool DataThreadPluginEditor::applyPresetObject (const juce::var& root)
     const bool hasCrEnable      = getInt("cr_enable",         cr_enable);
     const bool hasCrClk         = getInt("cr_clk",            cr_clk);
     const bool hasStimTime      = getInt("stimulation_time_ms", stim_time_ms);
+    getInt("stim_sequence_repeat_ms", stim_sequence_repeat_ms);
     const bool hasTlcMax        = getInt("tlc_max_on", tlc_max_on);
     const bool hasTlcPwm        = getInt("tlc_pwm", tlc_pwm);
     const bool hasStimMode      = getInt("electrical_or_optic_stim", electrical_or_optic_stim);
@@ -659,6 +661,7 @@ bool DataThreadPluginEditor::applyPresetObject (const juce::var& root)
         thread->setChargeRecoveryEnable(cr_enable);
         thread->setChargeRecoveryClk(cr_clk);
         thread->setStimulationTimeMs(stim_time_ms);
+        thread->setStimSequenceRepeatMs(stim_sequence_repeat_ms);
         thread->setTlcMaxOn(tlc_max_on);
         thread->setTlcPwm(tlc_pwm);
         thread->setStimMode(electrical_or_optic_stim);

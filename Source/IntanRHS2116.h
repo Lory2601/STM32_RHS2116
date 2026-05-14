@@ -66,4 +66,5 @@ private:
     ofSerial& serial_;
     static constexpr unsigned int kWriteDelayMs = 100; // inter-command guard time
     bool sendCommand(const std::string& command);
+    bool sendStimCommand(const std::string& command);
 };
